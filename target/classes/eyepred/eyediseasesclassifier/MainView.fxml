@@ -1,105 +1,234 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <?import javafx.geometry.Insets?>
+<?import javafx.scene.chart.LineChart?>
+<?import javafx.scene.chart.NumberAxis?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.CheckBox?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ListView?>
 <?import javafx.scene.control.ProgressBar?>
-<?import javafx.scene.control.Slider?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.SplitPane?>
+<?import javafx.scene.control.Tab?>
+<?import javafx.scene.control.TabPane?>
+<?import javafx.scene.control.TextArea?>
 <?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.TitledPane?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.ColumnConstraints?>
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.RowConstraints?>
+<?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.text.Font?>
 
-<VBox spacing="10.0" xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1" fx:controller="eyepred.eyediseasesclassifier.MainController">
-   <padding>
-      <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
-   </padding>
-
-   <GridPane hgap="10.0" vgap="10.0">
-     <columnConstraints>
-       <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="150.0" />
-       <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="600.0" />
-     </columnConstraints>
-     <rowConstraints>
-       <RowConstraints minHeight="10.0" vgrow="SOMETIMES" /> <RowConstraints minHeight="10.0" vgrow="SOMETIMES" /> <RowConstraints minHeight="10.0" vgrow="SOMETIMES" /> <RowConstraints minHeight="10.0" vgrow="SOMETIMES" /> <RowConstraints minHeight="10.0" vgrow="SOMETIMES" /> <RowConstraints minHeight="10.0" vgrow="SOMETIMES" /> </rowConstraints>
-      <children>
-         <Label text="Folder Dataset" GridPane.rowIndex="0" />
-         <HBox spacing="10.0" GridPane.columnIndex="1" GridPane.rowIndex="0">
-            <Button fx:id="btnInputDataset" onAction="#handleInputDataset" text="Pilih Folder Input..." />
-            <Label fx:id="lblInputPath" text="Belum ada folder dipilih" />
-         </HBox>
-
-         <Label text="Folder Output" GridPane.rowIndex="1" />
-         <HBox spacing="10.0" GridPane.columnIndex="1" GridPane.rowIndex="1">
-            <Button fx:id="btnOutput" onAction="#handleOutputFolder" text="Pilih Folder Output..." />
-            <Label fx:id="lblOutputPath" text="Belum ada folder dipilih" />
-         </HBox>
-
-         <Label text="File Model (.h5)" GridPane.rowIndex="2" />
-         <HBox spacing="10.0" GridPane.columnIndex="1" GridPane.rowIndex="2">
-             <Button fx:id="btnModelPath" onAction="#handleModelPath" text="Pilih File Model..." />
-             <Label fx:id="lblModelPath" text="Belum ada model dipilih" />
-         </HBox>
-         <Label text="Split Dataset" GridPane.rowIndex="3" />
-         <HBox alignment="CENTER_LEFT" spacing="10.0" GridPane.columnIndex="1" GridPane.rowIndex="3">
-            <Label text="Latih" />
-            <Slider fx:id="sliderSplit" majorTickUnit="10.0" max="90.0" min="50.0" showTickLabels="true" showTickMarks="true" value="80.0" />
-            <Label text="Uji" />
-            <Label fx:id="lblSplitValue" text="80% / 20%" />
-         </HBox>
-
-         <Label text="Konfigurasi Training" GridPane.rowIndex="4" />
-         <HBox alignment="CENTER_LEFT" spacing="10.0" GridPane.columnIndex="1" GridPane.rowIndex="4">
-            <TextField fx:id="txtEpochs" promptText="Jumlah Epoch (tdk dipakai)" disable="true"/> <CheckBox fx:id="chkTransferLearning" selected="true" text="Transfer Learning (tdk dipakai)" disable="true"/> <TextField fx:id="txtDropout" promptText="Dropout (tdk dipakai)" disable="true"/> <TextField fx:id="txtNeurons" promptText="Neuron (tdk dipakai)" disable="true"/> </HBox>
-
-         <Button fx:id="btnMulaiTraining" onAction="#handleMulaiTraining" text="Mulai Evaluasi" GridPane.columnIndex="1" GridPane.rowIndex="5" style="-fx-font-weight: bold; -fx-font-size: 14px;" />
-      </children>
-   </GridPane>
-
-   <VBox fx:id="mainOutputArea" VBox.vgrow="ALWAYS">
-
-      <VBox fx:id="loadingPane" alignment="CENTER" spacing="10.0" visible="false" managed="false" VBox.vgrow="ALWAYS"> <Label fx:id="lblLoadingStatus" text="Memulai proses...">
-            <font><Font size="16.0" /></font>
-         </Label>
-         <ProgressBar fx:id="progressBar" prefWidth="600.0" progress="-1.0" />
+<StackPane xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="eyepred.eyediseasesclassifier.MainController">
+   <children>
+      <VBox spacing="10.0">
+         <padding>
+            <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+         </padding>
+         <children>
+            <Label style="-fx-font-weight: bold; -fx-font-size: 20px;" text="Pengklasifikasi Gambar Interaktif Menggunakan VGG16">
+               <font>
+                  <Font size="18.0" />
+               </font>
+            </Label>
+            <SplitPane dividerPositions="0.35" VBox.vgrow="ALWAYS">
+               <items>
+                   <ScrollPane fitToWidth="true">
+                     <content>
+                        <VBox spacing="15.0">
+                           <padding>
+                              <Insets right="5.0" />
+                           </padding>
+                           <children>
+                              <TitledPane collapsible="false" text="1. Modul Persiapan Data">
+                                 <content>
+                                    <VBox spacing="10.0">
+                                       <padding>
+                                          <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+                                       </padding>
+                                       <children>
+                                          <Label style="-fx-font-weight: bold;" text="Pemuatan Dataset:" />
+                                          <Button fx:id="btnInputDataset" onAction="#handleInputDataset" text="Pilih Folder Dataset..." />
+                                          <Label fx:id="lblInputPath" style="-fx-text-fill: gray;" text="Belum ada folder dipilih" />
+                                          <Label style="-fx-font-weight: bold;" text="Penyeimbangan (Balancing) Data:" />
+                                          <CheckBox fx:id="chkBalanceData" text="Seimbangkan Dataset (Gunakan Class Weights)" />
+                                          <Label style="-fx-font-weight: bold;" text="Pembagian Rasio (total harus 100):" />
+                                          <HBox alignment="CENTER_LEFT" spacing="10.0">
+                                             <children>
+                                                <Label text="Train:" />
+                                                <TextField fx:id="txtSplitTrain" prefWidth="60.0" text="70" />
+                                                <Label text="Val:" />
+                                                <TextField fx:id="txtSplitVal" prefWidth="60.0" text="15" />
+                                                <Label text="Test:" />
+                                                <TextField fx:id="txtSplitTest" prefWidth="60.0" text="15" />
+                                             </children>
+                                          </HBox>
+                                       </children>
+                                    </VBox>
+                                 </content>
+                              </TitledPane>
+                              <TitledPane collapsible="false" text="2. Modul Konfigurasi Model &amp; Training">
+                                 <content>
+                                    <VBox spacing="10.0">
+                                       <padding>
+                                          <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+                                       </padding>
+                                       <children>
+                                          <Label style="-fx-font-weight: bold;" text="Kontrol Transfer Learning:" />
+                                          <CheckBox fx:id="chkFreezeBase" selected="true" text="Bekukan (Freeze) Layer VGG16" />
+                                          <Label style="-fx-font-weight: bold;" text="Kustomisasi Arsitektur (Classifier Head):" />
+                                          <Label text="Neurons (pisahkan dengan koma, misal: 512, 256)" />
+                                          <TextField fx:id="txtDenseNeurons" promptText="e.g., 512" text="512" />
+                                          <Label text="Dropout Rate Dengan Range 0-1" />
+                                          <TextField fx:id="txtDropoutRate" prefWidth="80.0" promptText="e.g., 0.5" text="0.5" />
+                                          <Label style="-fx-font-weight: bold;" text="Pengaturan Jumlah  Epoch:" />
+                                          <TextField fx:id="txtEpochs" prefWidth="80.0" text="10" />
+                                       </children>
+                                    </VBox>
+                                 </content>
+                              </TitledPane>
+                              <TitledPane collapsible="false" text="3. Lokasi Output untuk menyimpan model (.h5) dan hasil evaluasi.">
+                                 <content>
+                                    <VBox prefHeight="1.0" prefWidth="444.0" spacing="10.0">
+                                       <padding>
+                                          <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+                                       </padding>
+                                       <children>
+                                          <Button fx:id="btnOutputDir" onAction="#handleOutputFolder" text="Pilih Folder Output..." />
+                                          <Label fx:id="lblOutputPath" style="-fx-text-fill: gray;" text="Belum ada folder dipilih" />
+                                       </children>
+                                    </VBox>
+                                 </content>
+                              </TitledPane>
+                              <Button fx:id="btnStartTraining" maxWidth="1.7976931348623157E308" onAction="#handleStartTraining" style="-fx-font-weight: bold; -fx-font-size: 16px; -fx-background-color: #4CAF50; -fx-text-fill: white;" text="Mulai Training &amp; Evaluasi" HBox.hgrow="ALWAYS" />
+                           </children>
+                        </VBox>
+                     </content>
+                  </ScrollPane>
+                   <TabPane fx:id="tabPaneOutput" VBox.vgrow="ALWAYS">
+                     <tabs>
+                        
+                         <Tab text="🐍 Log Python">
+                             <content>
+                                 <TextArea fx:id="txtLog" editable="false" style="-fx-font-family: 'monospaced';" VBox.vgrow="ALWAYS" />
+                             </content>
+                         </Tab>
+                        <Tab text="📉 Val Loss/Val Accuracy">
+                           <content>
+                              <VBox spacing="5.0">
+                                 <padding>
+                                    <Insets top="10.0" />
+                                 </padding>
+                                 <children>
+                                    <Label style="-fx-font-weight: bold; -fx-font-size: 14px;" text="Progres Training (Validation Set)" />
+                                    <LineChart fx:id="chartTraining" animated="false" VBox.vgrow="ALWAYS">
+                                      <xAxis>
+                                        <NumberAxis label="Epoch" />
+                                      </xAxis>
+                                      <yAxis>
+                                        <NumberAxis label="Value" />
+                                      </yAxis>
+                                    </LineChart>
+                                 </children>
+                              </VBox>
+                           </content>
+                        </Tab>
+                        <Tab text="📊 Evaluasi Performa Model">
+                           <content>
+                              <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS">
+                                 <content>
+                                    <VBox spacing="10.0">
+                                       <padding>
+                                          <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+                                       </padding>
+                                       <children>
+                                          <Label style="-fx-font-weight: bold; -fx-font-size: 14px;" text="Laporan Performa (Test Set)" />
+                                          <GridPane hgap="10.0" vgap="5.0">
+                                            <columnConstraints>
+                                              <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="120.0" />
+                                              <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="150.0" />
+                                            </columnConstraints>
+                                            <rowConstraints>
+                                              <RowConstraints minHeight="10.0" vgrow="SOMETIMES" />
+                                              <RowConstraints minHeight="10.0" vgrow="SOMETIMES" />
+                                              <RowConstraints minHeight="10.0" vgrow="SOMETIMES" />
+                                              <RowConstraints minHeight="10.0" vgrow="SOMETIMES" />
+                                            </rowConstraints>
+                                             <children>
+                                                <Label style="-fx-font-weight: bold;" text="Accuracy:" />
+                                                <Label style="-fx-font-weight: bold;" text="Precision (Macro):" GridPane.rowIndex="1" />
+                                                <Label style="-fx-font-weight: bold;" text="Recall (Macro):" GridPane.rowIndex="2" />
+                                                <Label style="-fx-font-weight: bold;" text="F1-Score (Macro):" GridPane.rowIndex="3" />
+                                                <Label fx:id="lblAkurasi" text="-" GridPane.columnIndex="1" />
+                                                <Label fx:id="lblPresisi" text="-" GridPane.columnIndex="1" GridPane.rowIndex="1" />
+                                                <Label fx:id="lblRecall" text="-" GridPane.columnIndex="1" GridPane.rowIndex="2" />
+                                                <Label fx:id="lblF1" text="-" GridPane.columnIndex="1" GridPane.rowIndex="3" />
+                                             </children>
+                                          </GridPane>
+                                          </children>
+                                    </VBox>
+                                 </content>
+                              </ScrollPane>
+                           </content>
+                        </Tab>
+                        
+                        <Tab text="📊 Confusion Matrix">
+                           <content>
+                              <StackPane style="-fx-background-color: #f4f4f4;">
+                                 <padding>
+                                    <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+                                 </padding>
+                                 <children>
+                                     <ImageView fx:id="imgConfusionMatrix" pickOnBounds="true" preserveRatio="true" />
+                                 </children>
+                              </StackPane>
+                           </content>
+                        </Tab>
+                        <Tab text="📊 Evaluasi Per Kelas">
+                           <content>
+                              <VBox spacing="5.0">
+                                 <padding>
+                                    <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+                                 </padding>
+                                 <children>
+                                    <Label style="-fx-font-weight: bold;" text="Metrik Performa Per Kelas (Test Set)" />
+                                    <TextArea fx:id="txtClassificationReport" editable="false" style="-fx-font-family: 'monospaced';" VBox.vgrow="ALWAYS" />
+                                 </children>
+                              </VBox>
+                           </content>
+                        </Tab>
+                        
+                        <Tab text="🖼 Galeri Per Gambar">
+                           <content>
+                              <VBox spacing="5.0">
+                                 <padding>
+                                    <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+                                 </padding>
+                                 <children>
+                                    <Label style="-fx-font-weight: bold;" text="Galeri Sampel Gambar Uji (Test Set)" />
+                                    <Label text="Klik item untuk melihat detail skor. (Hijau = Benar, Merah = Salah)" />
+                                    <ListView fx:id="galleryListView" VBox.vgrow="ALWAYS" />
+                                 </children>
+                              </VBox>
+                           </content>
+                        </Tab>
+                     </tabs>
+                  </TabPane>
+               </items>
+            </SplitPane>
+         </children>
       </VBox>
-
-      <VBox fx:id="resultsPane" spacing="10.0" VBox.vgrow="ALWAYS"> <Label text="Hasil Evaluasi"> <font><Font name="System Bold" size="18.0" /></font>
-         </Label>
-
-         <HBox alignment="CENTER" spacing="20.0">
-            <VBox alignment="CENTER" style="-fx-border-color: lightgray; -fx-border-radius: 5; -fx-padding: 10;">
-               <Label text="Akurasi" style="-fx-font-weight: bold;" />
-               <Label fx:id="lblAkurasi" text="-" style="-fx-font-size: 20px; -fx-text-fill: green;" />
-            </VBox>
-            <VBox alignment="CENTER" style="-fx-border-color: lightgray; -fx-border-radius: 5; -fx-padding: 10;">
-               <Label text="Presisi (Macro)" style="-fx-font-weight: bold;" /> <Label fx:id="lblPresisi" text="-" style="-fx-font-size: 20px;" />
-            </VBox>
-            <VBox alignment="CENTER" style="-fx-border-color: lightgray; -fx-border-radius: 5; -fx-padding: 10;">
-               <Label text="Recall (Macro)" style="-fx-font-weight: bold;" /> <Label fx:id="lblRecall" text="-" style="-fx-font-size: 20px;" />
-            </VBox>
-            <VBox alignment="CENTER" style="-fx-border-color: lightgray; -fx-border-radius: 5; -fx-padding: 10;">
-               <Label text="F1-Score (Macro)" style="-fx-font-weight: bold;" /> <Label fx:id="lblF1" text="-" style="-fx-font-size: 20px;" />
-            </VBox>
-         </HBox>
-
-         <HBox spacing="10.0" VBox.vgrow="ALWAYS">
-            <VBox HBox.hgrow="ALWAYS">
-               <Label text="Confusion Matrix" style="-fx-font-weight: bold;" />
-               <ImageView fx:id="imgConfusionMatrix" fitHeight="400.0" fitWidth="400.0" pickOnBounds="true" preserveRatio="true" />
-            </VBox>
-
-            <VBox HBox.hgrow="ALWAYS">
-               <Label text="Galeri Sampel Gambar Uji" style="-fx-font-weight: bold;" />
-               <ListView fx:id="galleryListView" VBox.vgrow="ALWAYS" />
-            </VBox>
-         </HBox>
+       <VBox fx:id="loadingPane" alignment="CENTER" managed="false" spacing="10.0" style="-fx-background-color: rgba(255, 255, 255, 0.8);" visible="false">
+         <children>
+            <Label fx:id="lblLoadingStatus" style="-fx-font-size: 18px; -fx-font-weight: bold;" text="Memulai proses..." />
+            <ProgressBar fx:id="progressBar" prefWidth="600.0" progress="-1.0" />
+            <Label text="Proses ini bisa memakan waktu lama. Harap tunggu..." />
+         </children>
       </VBox>
-   </VBox>
-</VBox>
+   </children>
+</StackPane>

@@ -1,4 +1,4 @@
-package eyepred.eyediseasesclassifier;
+package eyepred.eyediseasesclassifier; // Ganti dengan package Anda
 
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
@@ -7,17 +7,14 @@ import javafx.stage.Stage;
 
 import java.io.IOException;
 
-/**
- * JavaFX App (Main Entry Point)
- * Nama kelas ini "App" untuk mencocokkan <mainClass> di pom.xml
- */
 public class App extends Application {
     @Override
     public void start(Stage stage) throws IOException {
-        // Lokasi FXML disesuaikan dengan package
         FXMLLoader fxmlLoader = new FXMLLoader(App.class.getResource("MainView.fxml"));
-        Scene scene = new Scene(fxmlLoader.load(), 900, 750); // Ukuran window awal
-        stage.setTitle("Eye Disease Classifier (STKI Project)");
+        Scene scene = new Scene(fxmlLoader.load(), 1200, 800); // Ukuran window diperbesar
+        
+        // 1. Judul aplikasi pada window
+        stage.setTitle("Interactive Image Classifier (VGG16)");
         stage.setScene(scene);
         stage.show();
     }
