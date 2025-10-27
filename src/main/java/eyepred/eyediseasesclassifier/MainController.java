@@ -1,11 +1,15 @@
-package eyepred.eyediseasesclassifier;
+package eyepred.eyediseasesclassifier; // Ganti dengan package Anda
 
-// Import JavaFX
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
+import javafx.scene.chart.LineChart;
+import javafx.scene.chart.XYChart;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -13,106 +17,97 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.DirectoryChooser;
-import javafx.stage.FileChooser;
 
-// Import Java IO & Util
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-// Import Jackson JSON
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-
 public class MainController {
 
-    // === Daftar Kelas (HARUS SAMA DENGAN OUTPUT PYTHON) ===
-    private static final String[] KELAS = {
-            "Central Serous Chorioretinopathy", "Diabetic Retinopathy",
-            "Disc Edema", "Glaucoma", "Healthy", "Macular Scar", "Myopia",
-            "Pterygium", "Retinal Detachment", "Retinitis Pigmentosa"
-    };
+    // === Path ke Skrip Python (GANTI INI) ===
+    private static final String PYTHON_EXECUTABLE = "C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"; // atau "python3"
+    // GANTI PATH INI ke lokasi skrip train_and_evaluate.py Anda
+    private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\CodeWorkspace\\DockerGenerate\\testing\\train_and_evaluate.py";
 
     // === Injeksi FXML (Panel Kontrol) ===
     @FXML private Button btnInputDataset;
     @FXML private Label lblInputPath;
-    @FXML private Button btnOutput;
+    @FXML private CheckBox chkBalanceData;
+    @FXML private TextField txtSplitTrain;
+    @FXML private TextField txtSplitVal;
+    @FXML private TextField txtSplitTest;
+    @FXML private CheckBox chkFreezeBase;
+    @FXML private TextField txtDenseNeurons;
+    @FXML private TextField txtDropoutRate;
+    @FXML private TextField txtEpochs;
+    @FXML private Button btnOutputDir;
     @FXML private Label lblOutputPath;
-    @FXML private Button btnModelPath;
-    @FXML private Label lblModelPath;
-    @FXML private Slider sliderSplit; // Tidak dipakai backend evaluasi
-    @FXML private Label lblSplitValue;
-    @FXML private TextField txtEpochs; // Tidak dipakai
-    @FXML private CheckBox chkTransferLearning; // Tidak dipakai
-    @FXML private TextField txtDropout; // Tidak dipakai
-    @FXML private TextField txtNeurons; // Tidak dipakai
-    @FXML private Button btnMulaiTraining; // Tombol Aksi
+    @FXML private Button btnStartTraining;
 
-    // === Injeksi FXML (Area Output) ===
-    @FXML private VBox loadingPane;
-    @FXML private Label lblLoadingStatus;
-    @FXML private ProgressBar progressBar;
-    @FXML private VBox resultsPane;
+    // === Injeksi FXML (Panel Output) ===
+    @FXML private TabPane tabPaneOutput;
+    @FXML private LineChart<Number, Number> chartTraining;
     @FXML private Label lblAkurasi;
     @FXML private Label lblPresisi;
     @FXML private Label lblRecall;
     @FXML private Label lblF1;
     @FXML private ImageView imgConfusionMatrix;
+    @FXML private TextArea txtClassificationReport;
+    @FXML private TextArea txtLog;
+
+    // === Injeksi FXML (Galeri) ===
     @FXML private ListView<GalleryItem> galleryListView;
 
-    // ObjectMapper untuk membaca JSON
+    // === Injeksi FXML (Loading) ===
+    @FXML private VBox loadingPane;
+    @FXML private Label lblLoadingStatus;
+    @FXML private ProgressBar progressBar;
+
+    // === Variabel Internal ===
+    private File inputDir;
+    private File outputDir;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private XYChart.Series<Number, Number> accuracySeries;
+    private XYChart.Series<Number, Number> lossSeries;
 
-    // Variabel untuk menyimpan path File objek
-    private File inputDir = null;
-    private File outputDir = null;
-    private File modelFile = null;
-
-    // Model data untuk galeri (sesuaikan field dengan JSON)
+    // === Model data untuk galeri ===
     public static class GalleryItem {
         public String fileName;
         public String actualLabel;
         public String predictedLabel;
         public double confidence;
         public Map<String, Double> allScores;
-        public GalleryItem() {} // Constructor default
-        // Getter bisa ditambahkan jika perlu, atau pakai field public
+        public GalleryItem() {}
     }
 
     @FXML
     public void initialize() {
-        // Setup slider (hanya visual)
-        sliderSplit.valueProperty().addListener((obs, oldVal, newVal) -> {
-            int train = newVal.intValue();
-            int test = 100 - train;
-            lblSplitValue.setText(String.format("%d%% / %d%%", train, test));
-        });
+        // Setup Grafik
+        accuracySeries = new XYChart.Series<>();
+        accuracySeries.setName("Validation Accuracy");
+        lossSeries = new XYChart.Series<>();
+        lossSeries.setName("Validation Loss");
+        chartTraining.getData().addAll(accuracySeries, lossSeries);
 
-        // Kondisi Awal UI
         loadingPane.setVisible(false);
-        loadingPane.setManaged(false); // Agar tidak makan tempat saat disembunyikan
-        resultsPane.setVisible(true);
-        clearResultsUI(); // Kosongkan tampilan hasil
 
+        // Setup fungsionalitas galeri
+        setupGalleryCellFactory();
         setupGalleryClickListener();
-        setupGalleryCellFactory(); // Setup tampilan galeri
     }
-
-    // === Handlers Tombol ===
 
     @FXML
     private void handleInputDataset() {
         DirectoryChooser dirChooser = new DirectoryChooser();
-        dirChooser.setTitle("Pilih Folder Dataset Input (Ground Truth)");
-        File selectedDir = dirChooser.showDialog(btnInputDataset.getScene().getWindow());
-        if (selectedDir != null && selectedDir.isDirectory()) {
-            inputDir = selectedDir;
+        dirChooser.setTitle("Pilih Folder Dataset Input");
+        File dir = dirChooser.showDialog(btnInputDataset.getScene().getWindow());
+        if (dir != null) {
+            inputDir = dir;
             lblInputPath.setText(inputDir.getAbsolutePath());
-        } else {
-            inputDir = null;
-            lblInputPath.setText("Belum ada folder dipilih");
         }
     }
 
@@ -120,250 +115,280 @@ public class MainController {
     private void handleOutputFolder() {
         DirectoryChooser dirChooser = new DirectoryChooser();
         dirChooser.setTitle("Pilih Folder Output Hasil");
-        File selectedDir = dirChooser.showDialog(btnOutput.getScene().getWindow());
-        if (selectedDir != null && selectedDir.isDirectory()) {
-            outputDir = selectedDir;
+        File dir = dirChooser.showDialog(btnOutputDir.getScene().getWindow());
+        if (dir != null) {
+            outputDir = dir;
             lblOutputPath.setText(outputDir.getAbsolutePath());
-        } else {
-            outputDir = null;
-            lblOutputPath.setText("Belum ada folder dipilih");
         }
     }
 
     @FXML
-    private void handleModelPath() {
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Pilih File Model (.h5)");
-        fileChooser.getExtensionFilters().add(
-                new FileChooser.ExtensionFilter("Keras Model", "*.h5")
-        );
-        File selectedFile = fileChooser.showOpenDialog(btnModelPath.getScene().getWindow());
-        if (selectedFile != null && selectedFile.exists()) {
-            modelFile = selectedFile;
-            lblModelPath.setText(modelFile.getName());
-        } else {
-            modelFile = null;
-            lblModelPath.setText("Belum ada model dipilih");
-        }
-    }
-
-    @FXML
-    private void handleMulaiTraining() { // Nama fungsi tetap, aksi jadi evaluasi
-        // --- Validasi Input ---
-        if (modelFile == null) {
-            showAlert(Alert.AlertType.ERROR, "Error Input", "Silakan pilih file model (.h5) yang valid.");
+    private void handleStartTraining() {
+        // 1. Validasi Input
+        if (inputDir == null || outputDir == null) {
+            showAlert(Alert.AlertType.ERROR, "Error", "Folder Input dan Output tidak boleh kosong.");
             return;
         }
-        if (inputDir == null) {
-            showAlert(Alert.AlertType.ERROR, "Error Input", "Silakan pilih folder dataset input yang valid.");
-            return;
-        }
-        if (outputDir == null) {
-            showAlert(Alert.AlertType.ERROR, "Error Input", "Silakan pilih folder output yang valid.");
+        int trainSplit, valSplit, testSplit, epochs;
+        float dropout;
+        try {
+            trainSplit = Integer.parseInt(txtSplitTrain.getText());
+            valSplit = Integer.parseInt(txtSplitVal.getText());
+            testSplit = Integer.parseInt(txtSplitTest.getText());
+            if (trainSplit + valSplit + testSplit != 100) {
+                showAlert(Alert.AlertType.ERROR, "Error", "Total split ratio (Train + Val + Test) harus 100.");
+                return;
+            }
+            epochs = Integer.parseInt(txtEpochs.getText());
+            dropout = Float.parseFloat(txtDropoutRate.getText());
+        } catch (NumberFormatException e) {
+            showAlert(Alert.AlertType.ERROR, "Error", "Input Epoch, Split, dan Dropout harus berupa angka valid.");
             return;
         }
 
-        // Kosongkan hasil sebelumnya
+        // 2. Bersihkan UI
         clearResultsUI();
+        tabPaneOutput.getSelectionModel().select(0); // Pindah ke tab Monitoring
 
-        // --- Jalankan Task Python di Background ---
-        Task<Boolean> evaluationTask = createPythonEvaluationTask();
+        // 3. Buat Perintah Python
+        List<String> command = buildPythonCommand(trainSplit, valSplit, testSplit, epochs, dropout);
 
-        // --- Ikat UI ke Task ---
-        progressBar.progressProperty().unbind();
-        progressBar.progressProperty().bind(evaluationTask.progressProperty());
-        lblLoadingStatus.textProperty().bind(evaluationTask.messageProperty());
+        // 4. Buat Task Background
+        Task<Boolean> trainingTask = createTrainingTask(command);
 
-        // --- Atur Aksi UI ---
-        evaluationTask.setOnRunning(e -> {
-            resultsPane.setVisible(false);
+        // 5. Ikat UI ke Task
+        lblLoadingStatus.textProperty().bind(trainingTask.messageProperty());
+        progressBar.progressProperty().bind(trainingTask.progressProperty());
+
+        trainingTask.setOnRunning(e -> {
             loadingPane.setVisible(true);
-            loadingPane.setManaged(true);
-            btnMulaiTraining.setDisable(true);
+            btnStartTraining.setDisable(true);
         });
 
-        evaluationTask.setOnSucceeded(e -> {
+        trainingTask.setOnSucceeded(e -> {
             loadingPane.setVisible(false);
-            loadingPane.setManaged(false);
-            resultsPane.setVisible(true);
-            btnMulaiTraining.setDisable(false);
-
-            if (evaluationTask.getValue()) { // Jika exitCode == 0
-                loadResults(); // Muat hasil dari file output
+            btnStartTraining.setDisable(false);
+            if (trainingTask.getValue()) {
+                showAlert(Alert.AlertType.INFORMATION, "Sukses", "Training dan evaluasi selesai. Memuat hasil...");
+                loadResults();
+                // Pindah ke tab Hasil Evaluasi (indeks 1)
+                tabPaneOutput.getSelectionModel().select(1); 
             } else {
-                showAlert(Alert.AlertType.ERROR, "Error Evaluasi", "Proses evaluasi Python gagal. Periksa log konsol.");
+                showAlert(Alert.AlertType.ERROR, "Gagal", "Proses Python gagal. Periksa tab Log untuk detail.");
+                // Pindah ke tab Log (indeks 5)
+                tabPaneOutput.getSelectionModel().select(5); // <-- PERUBAHAN DI SINI
             }
         });
 
-        evaluationTask.setOnFailed(e -> {
+        trainingTask.setOnFailed(e -> {
             loadingPane.setVisible(false);
-            loadingPane.setManaged(false);
-            resultsPane.setVisible(true);
-            btnMulaiTraining.setDisable(false);
-            showAlert(Alert.AlertType.ERROR, "Error Eksekusi", "Gagal menjalankan script Python.\nPastikan Python & library terinstall.\nError: " + evaluationTask.getException().getMessage());
-            evaluationTask.getException().printStackTrace();
+            btnStartTraining.setDisable(false);
+            showAlert(Alert.AlertType.ERROR, "Error Kritis", "Gagal menjalankan task: " + trainingTask.getException().getMessage());
+            trainingTask.getException().printStackTrace();
+            // Pindah ke tab Log (indeks 5)
+            tabPaneOutput.getSelectionModel().select(5); // <-- PERUBAHAN DI SINI
         });
 
-        // --- Jalankan Task ---
-        new Thread(evaluationTask).start();
+        // 6. Jalankan Task
+        new Thread(trainingTask).start();
     }
 
-    // --- Fungsi Helper untuk Task Python ---
-    private Task<Boolean> createPythonEvaluationTask() {
-         return new Task<>() {
+    private List<String> buildPythonCommand(int train, int val, int test, int epochs, float dropout) {
+        List<String> command = new ArrayList<>();
+        command.add(PYTHON_EXECUTABLE);
+        command.add(PYTHON_SCRIPT_PATH);
+        
+        command.add("--input-dir");
+        command.add(inputDir.getAbsolutePath());
+        
+        command.add("--output-dir");
+        command.add(outputDir.getAbsolutePath());
+        
+        command.add("--split-ratio");
+        command.add(String.format("%d,%d,%d", train, val, test));
+        
+        command.add("--epochs");
+        command.add(String.valueOf(epochs));
+        
+        command.add("--dropout-rate");
+        command.add(String.valueOf(dropout));
+        
+        String denseNeurons = txtDenseNeurons.getText().trim();
+        if (!denseNeurons.isEmpty()) {
+             command.add("--dense-neurons");
+             command.add(denseNeurons);
+        }
+       
+        if (chkBalanceData.isSelected()) {
+            command.add("--balance-data");
+        }
+        if (chkFreezeBase.isSelected()) {
+            command.add("--freeze-base");
+        }
+        
+        System.out.println("Executing command: " + String.join(" ", command));
+        return command;
+    }
+
+    private Task<Boolean> createTrainingTask(List<String> command) {
+        return new Task<>() {
             @Override
             protected Boolean call() throws Exception {
-                updateMessage("Mempersiapkan perintah Python...");
-                updateProgress(-1, 1); // Indeterminate
-
-                // ==========================================================
-                // ==== !! PENTING: SESUAIKAN PATH INI !! ====
-                // ==========================================================
-                // Tentukan path absolut ke script evaluate.py Anda
-                String pythonScriptPath = "C:\\Users\\LENOVO\\Documents\\CodeWorkspace\\DockerGenerate\\testing\\evaluate.py"; // <--- GANTI INI!
-                // Tentukan perintah python (biasanya "python" atau "python3")
-                String pythonCommand = "python";
-                // ==========================================================
-
-                File scriptFile = new File(pythonScriptPath);
-                if (!scriptFile.exists()) {
-                    updateMessage("Error: Script Python tidak ditemukan di " + pythonScriptPath);
-                    throw new FileNotFoundException("Script Python tidak ditemukan: " + pythonScriptPath);
+                int totalEpochs = 1;
+                for(int i=0; i < command.size(); i++) {
+                    if(command.get(i).equals("--epochs") && i+1 < command.size()) {
+                        totalEpochs = Integer.parseInt(command.get(i+1));
+                        break;
+                    }
                 }
-
-
-                List<String> command = new ArrayList<>();
-                command.add(pythonCommand);
-                command.add(scriptFile.getAbsolutePath());
-                command.add("--model-path");
-                command.add(modelFile.getAbsolutePath());
-                 command.add("--input-dir");
-                command.add(inputDir.getAbsolutePath());
-                command.add("--output-dir");
-                command.add(outputDir.getAbsolutePath());
-                // command.add("--batch-size"); // Tambahkan argumen lain jika perlu
-                // command.add("64");
-
-                System.out.println("Executing command: " + String.join(" ", command));
-
-                updateMessage("Menjalankan evaluasi via Python lokal...");
+                
                 ProcessBuilder processBuilder = new ProcessBuilder(command);
                 processBuilder.redirectErrorStream(true);
                 Process process = processBuilder.start();
 
-                // Baca output Python ke konsol Java
                 try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
-                        System.out.println("Python Log: " + line);
-                        // updateMessage("Python: " + line); // Bisa update UI jika mau
+                        final String logLine = line;
+                        
+                        Platform.runLater(() -> txtLog.appendText(logLine + "\n"));
+
+                        if (logLine.trim().startsWith("{\"epoch\":")) {
+                            try {
+                                Map<String, Object> epochData = objectMapper.readValue(logLine, new TypeReference<>() {});
+                                int epoch = (Integer) epochData.get("epoch") + 1;
+                                double acc = ((Number) epochData.get("val_accuracy")).doubleValue();
+                                double loss = ((Number) epochData.get("val_loss")).doubleValue();
+
+                                final int currentEpoch = epoch;
+                                final int finalTotalEpochs = totalEpochs;
+                                Platform.runLater(() -> {
+                                    updateMessage(String.format("Training Epoch %d/%d...", currentEpoch, finalTotalEpochs));
+                                    updateProgress(currentEpoch, finalTotalEpochs);
+                                    accuracySeries.getData().add(new XYChart.Data<>(currentEpoch, acc));
+                                    lossSeries.getData().add(new XYChart.Data<>(currentEpoch, loss));
+                                });
+
+                            } catch (Exception e) {
+                                System.err.println("Gagal parse JSON real-time: " + e.getMessage());
+                            }
+                        }
                     }
                 }
 
                 int exitCode = process.waitFor();
-                System.out.println("Python process finished with exit code: " + exitCode);
                 return exitCode == 0;
             }
         };
     }
+    
+    private void clearResultsUI() {
+        accuracySeries.getData().clear();
+        lossSeries.getData().clear();
+        
+        lblAkurasi.setText("-");
+        lblPresisi.setText("-");
+        lblRecall.setText("-");
+        lblF1.setText("-");
+        
+        imgConfusionMatrix.setImage(null);
+        
+        txtClassificationReport.clear();
+        txtLog.clear();
 
-    // --- Fungsi Memuat Hasil ---
+        if (galleryListView != null) {
+            galleryListView.setItems(FXCollections.observableArrayList());
+        }
+    }
+
     private void loadResults() {
+        if (outputDir == null) return;
         System.out.println("Mencoba memuat hasil dari: " + outputDir.getAbsolutePath());
-        File metricsFile = new File(outputDir, "metrics.json");
-        File cmFile = new File(outputDir, "confusion_matrix.png");
-        File predsFile = new File(outputDir, "predictions.json");
-        boolean resultsLoaded = false;
+
+        File metricsFile = new File(outputDir, "final_metrics.json");
+        File cmFile = new File(outputDir, "confusion_matrix_test.png");
+        File reportFile = new File(outputDir, "classification_report_test.txt");
+        File modelFile = new File(outputDir, "trained_model.h5");
+        File predsFile = new File(outputDir, "predictions.json"); 
 
         // 1. Muat Metrik
         if (metricsFile.exists()) {
             try {
-                Map<String, Double> metrics = objectMapper.readValue(metricsFile, new TypeReference<>() {});
-                lblAkurasi.setText(String.format("%.2f%%", metrics.getOrDefault("accuracy", 0.0)));
-                lblPresisi.setText(String.format("%.2f%%", metrics.getOrDefault("precision_macro", 0.0)));
-                lblRecall.setText(String.format("%.2f%%", metrics.getOrDefault("recall_macro", 0.0)));
-                lblF1.setText(String.format("%.2f%%", metrics.getOrDefault("f1_macro", 0.0)));
-                System.out.println("Metrik berhasil dimuat.");
-                resultsLoaded = true;
+                Map<String, Object> metrics = objectMapper.readValue(metricsFile, new TypeReference<>() {});
+                lblAkurasi.setText(String.format("%.2f%%", ((Number) metrics.getOrDefault("accuracy", 0.0)).doubleValue() * 100));
+                lblPresisi.setText(String.format("%.2f%%", ((Number) metrics.getOrDefault("precision_macro", 0.0)).doubleValue() * 100));
+                lblRecall.setText(String.format("%.2f%%", ((Number) metrics.getOrDefault("recall_macro", 0.0)).doubleValue() * 100));
+                lblF1.setText(String.format("%.2f%%", ((Number) metrics.getOrDefault("f1_macro", 0.0)).doubleValue() * 100));
             } catch (IOException e) {
-                handleLoadError("metrics.json", e);
+                System.err.println("Gagal baca metrics.json: " + e.getMessage());
             }
         } else {
-            System.err.println("File metrics.json tidak ditemukan.");
+             System.err.println("File final_metrics.json tidak ditemukan.");
         }
 
         // 2. Muat Confusion Matrix
         if (cmFile.exists()) {
             try (FileInputStream cmStream = new FileInputStream(cmFile)) {
                 imgConfusionMatrix.setImage(new Image(cmStream));
-                System.out.println("Confusion matrix berhasil dimuat.");
-                resultsLoaded = true;
             } catch (IOException e) {
-                 handleLoadError("confusion_matrix.png", e);
+                System.err.println("Gagal baca confusion_matrix_test.png: " + e.getMessage());
             }
         } else {
-            System.err.println("File confusion_matrix.png tidak ditemukan.");
+             System.err.println("File confusion_matrix_test.png tidak ditemukan.");
         }
 
-        // 3. Muat Galeri Prediksi
+        // 3. Muat Classification Report
+        if (reportFile.exists()) {
+            try {
+                String reportText = new String(Files.readAllBytes(Paths.get(reportFile.getAbsolutePath())), StandardCharsets.UTF_8);
+                txtClassificationReport.setText(reportText);
+            } catch (IOException e) {
+                 System.err.println("Gagal baca classification_report_test.txt: " + e.getMessage());
+            }
+        } else {
+            System.err.println("File classification_report_test.txt tidak ditemukan.");
+            txtClassificationReport.setText("File laporan tidak ditemukan.");
+        }
+
+        // 4. Muat Galeri Prediksi
         if (predsFile.exists()) {
             try {
                 List<GalleryItem> items = objectMapper.readValue(predsFile, new TypeReference<>() {});
                 galleryListView.setItems(FXCollections.observableArrayList(items));
-                System.out.println("Daftar prediksi ("+ items.size() +" item) berhasil dimuat.");
-                // Cell factory sudah di-setup di initialize
-                resultsLoaded = true;
+                System.out.println("Daftar prediksi galeri ("+ items.size() +" item) berhasil dimuat.");
             } catch (IOException e) {
-                 handleLoadError("predictions.json", e);
+                 System.err.println("Gagal baca predictions.json: " + e.getMessage());
             }
         } else {
              System.err.println("File predictions.json tidak ditemukan.");
         }
 
-        if (!resultsLoaded) {
-            showAlert(Alert.AlertType.WARNING, "Warning", "Tidak ada file hasil (JSON/PNG) yang ditemukan atau bisa dimuat dari folder output.");
+        // 5. Konfirmasi Model Disimpan
+        if (modelFile.exists()) {
+            txtLog.appendText(String.format("\n--- MODEL BERHASIL DISIMPAN ---\n%s\n", modelFile.getAbsolutePath()));
         }
     }
 
-    // --- Fungsi Helper UI ---
-
-    // Mengosongkan tampilan hasil
-    private void clearResultsUI() {
-        lblAkurasi.setText("-");
-        lblPresisi.setText("-");
-        lblRecall.setText("-");
-        lblF1.setText("-");
-        imgConfusionMatrix.setImage(null);
-        galleryListView.setItems(FXCollections.observableArrayList()); // Kosongkan list
-    }
-
-    // Menangani error saat load file hasil
-    private void handleLoadError(String fileName, Exception e) {
-        System.err.println("Gagal membaca " + fileName + ": " + e.getMessage());
-        e.printStackTrace();
-        showAlert(Alert.AlertType.WARNING, "Warning Memuat Hasil", "Gagal memuat file " + fileName + ".");
-    }
-
-    // Setup tampilan galeri
+    // ==========================================================
+    // === FUNGSI-FUNGSI GALERI (DARI CONTROLLER LAMA) ===
+    // ==========================================================
+    
     private void setupGalleryCellFactory() {
          galleryListView.setCellFactory(param -> new ListCell<>() {
-            private final HBox hbox = new HBox(10); // HBox(spacing)
+            private final HBox hbox = new HBox(10);
             private final ImageView thumbnail = new ImageView();
-            private final VBox textVBox = new VBox(); // VBox untuk teks
+            private final VBox textVBox = new VBox();
             private final Label fileNameLabel = new Label();
             private final Label actualLabel = new Label();
             private final Label predictedLabel = new Label();
 
-            // Blok inisialisasi untuk setup awal cell
             {
                 fileNameLabel.setStyle("-fx-font-weight: bold;");
                 textVBox.getChildren().addAll(fileNameLabel, actualLabel, predictedLabel);
-
-                thumbnail.setFitWidth(60); // Ukuran thumbnail
+                thumbnail.setFitWidth(60);
                 thumbnail.setFitHeight(60);
                 thumbnail.setPreserveRatio(true);
-                thumbnail.setSmooth(true); // Gambar lebih halus
-
+                thumbnail.setSmooth(true);
                 hbox.getChildren().addAll(thumbnail, textVBox);
                 hbox.setAlignment(Pos.CENTER_LEFT);
             }
@@ -374,56 +399,44 @@ public class MainController {
                 if (empty || item == null) {
                     setText(null);
                     setGraphic(null);
-                    thumbnail.setImage(null); // Hapus gambar dari cell sebelumnya
+                    thumbnail.setImage(null);
                 } else {
                     fileNameLabel.setText("File: " + item.fileName);
                     actualLabel.setText("Asli: " + item.actualLabel);
                     predictedLabel.setText("Prediksi: " + item.predictedLabel);
 
-                    // Set warna teks prediksi
                     if (item.actualLabel.equals(item.predictedLabel)) {
                         predictedLabel.setTextFill(Color.GREEN);
                     } else {
                         predictedLabel.setTextFill(Color.RED);
                     }
-
-                    // Muat thumbnail (di-handle oleh fungsi terpisah)
                     loadThumbnailForItemAsync(item);
-
-                    setGraphic(hbox); // Tampilkan HBox di cell
+                    setGraphic(hbox);
                 }
             }
-
-            // Fungsi memuat thumbnail secara asynchronous agar UI tidak freeze
+            
             private void loadThumbnailForItemAsync(GalleryItem item) {
-                // Gambar placeholder awal (opsional)
-                 thumbnail.setImage(null); // Kosongkan dulu
-
+                 thumbnail.setImage(null);
                  if (inputDir == null || !inputDir.isDirectory()) return;
-
                  File imageFile = findImageFile(inputDir, item.actualLabel, item.fileName);
+                 
                  if (imageFile != null && imageFile.exists()) {
-                     // Gunakan Image constructor dengan backgroundLoading=true
                      Image img = new Image(imageFile.toURI().toString(), 60, 60, true, true, true);
                      thumbnail.setImage(img);
-
-                     // Handle jika gagal load (misal file rusak)
                      img.errorProperty().addListener((obs, oldVal, newVal) -> {
                          if (newVal) {
                              System.err.println("Gagal load thumbnail async: " + item.fileName);
-                             thumbnail.setImage(null); // Set ke null jika error
+                             thumbnail.setImage(null);
                          }
                      });
-
                  } else {
-                      System.err.println("Thumbnail tidak ditemukan: " + item.fileName + " di " + item.actualLabel);
-                      thumbnail.setImage(null); // Atau gambar placeholder default
+                     System.err.println("Thumbnail tidak ditemukan: " + item.fileName + " di " + item.actualLabel);
+                     thumbnail.setImage(null);
                  }
             }
         });
     }
 
-    // Setup listener klik pada galeri
     private void setupGalleryClickListener() {
         galleryListView.getSelectionModel().selectedItemProperty().addListener((obs, oldSel, newSel) -> {
             if (newSel != null) {
@@ -431,38 +444,34 @@ public class MainController {
                 detailDialog.setTitle("Detail Prediksi Gambar");
                 detailDialog.setHeaderText("File: " + newSel.fileName);
 
-                // Muat Gambar Besar dari Folder INPUT
                 ImageView dialogImage = new ImageView();
-                dialogImage.setFitHeight(250); // Ukuran gambar detail
+                dialogImage.setFitHeight(250);
                 dialogImage.setPreserveRatio(true);
                 dialogImage.setSmooth(true);
 
                  if (inputDir != null && inputDir.isDirectory()) {
-                    File imageFile = findImageFile(inputDir, newSel.actualLabel, newSel.fileName);
-                    if (imageFile != null && imageFile.exists()) {
-                        // Muat gambar secara async untuk dialog
-                        Image img = new Image(imageFile.toURI().toString(), 0, 250, true, true, true);
-                        dialogImage.setImage(img);
-                        img.errorProperty().addListener((ob, ov, nv) -> {
+                     File imageFile = findImageFile(inputDir, newSel.actualLabel, newSel.fileName);
+                     if (imageFile != null && imageFile.exists()) {
+                         Image img = new Image(imageFile.toURI().toString(), 0, 250, true, true, true);
+                         dialogImage.setImage(img);
+                         img.errorProperty().addListener((ob, ov, nv) -> {
                              if (nv) System.err.println("Gagal load gambar detail: " + newSel.fileName);
-                        });
-                        detailDialog.setGraphic(dialogImage);
-                    } else {
-                        System.err.println("Gambar detail tidak ditemukan: " + newSel.fileName);
-                        detailDialog.setGraphic(null); // Tidak ada gambar jika tidak ketemu
-                    }
-                } else {
+                         });
+                         detailDialog.setGraphic(dialogImage);
+                     } else {
+                         System.err.println("Gambar detail tidak ditemukan: " + newSel.fileName);
+                         detailDialog.setGraphic(null);
+                     }
+                 } else {
                      detailDialog.setGraphic(null);
                  }
 
-                // Buat Teks Konten Detail
                 StringBuilder content = new StringBuilder();
                 content.append(String.format("Prediksi Utama: %s (Confidence: %.2f%%)\n",
                         newSel.predictedLabel, newSel.confidence));
                 content.append("Label Asli: " + newSel.actualLabel + "\n\n");
                 content.append("--- Skor Prediksi Semua Kelas ---\n");
 
-                // Urutkan skor dari tertinggi
                 newSel.allScores.entrySet().stream()
                         .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                         .forEach(entry -> content.append(String.format("%s: %.2f%%\n", entry.getKey(), entry.getValue())));
@@ -473,38 +482,42 @@ public class MainController {
                 textArea.setPrefHeight(200);
 
                 detailDialog.getDialogPane().setContent(textArea);
-                detailDialog.getDialogPane().setPrefWidth(550); // Lebarkan dialog
+                detailDialog.getDialogPane().setPrefWidth(550);
                 detailDialog.setResizable(true);
 
                 detailDialog.showAndWait();
-                galleryListView.getSelectionModel().clearSelection(); // Hapus seleksi
+                galleryListView.getSelectionModel().clearSelection();
             }
         });
     }
 
-    // Fungsi helper mencari file gambar
     private File findImageFile(File baseDir, String className, String fileName) {
+        if (baseDir == null || className == null || fileName == null) return null;
+        
         File classDir = new File(baseDir, className);
         if (classDir.isDirectory()) {
             File imgFile = new File(classDir, fileName);
             if (imgFile.exists()) return imgFile;
         }
-        // Fallback: coba cari di baseDir jika tidak ketemu di subfolder
+        
         File imgFileRoot = new File(baseDir, fileName);
         if (imgFileRoot.exists()) return imgFileRoot;
 
-        return null; // Tidak ketemu
+        return null;
     }
 
-    // Fungsi helper menampilkan Alert
+    // ==========================================================
+    // === FUNGSI HELPER ALERT (TETAP SAMA) ===
+    // ==========================================================
+
     private void showAlert(Alert.AlertType type, String title, String message) {
-        // Jalankan di JavaFX Application Thread jika dipanggil dari thread background
-        if (!javafx.application.Platform.isFxApplicationThread()) {
-            javafx.application.Platform.runLater(() -> showAlertInternal(type, title, message));
+        if (!Platform.isFxApplicationThread()) {
+            Platform.runLater(() -> showAlertInternal(type, title, message));
         } else {
             showAlertInternal(type, title, message);
         }
     }
+
     private void showAlertInternal(Alert.AlertType type, String title, String message) {
         Alert alert = new Alert(type);
         alert.setTitle(title);
