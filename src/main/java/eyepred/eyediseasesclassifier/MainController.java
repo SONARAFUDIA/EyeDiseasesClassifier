@@ -31,7 +31,8 @@ public class MainController {
     // === Path ke Skrip Python (GANTI INI) ===
     private static final String PYTHON_EXECUTABLE = "C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"; // atau "python3"
     // GANTI PATH INI ke lokasi skrip train_and_evaluate.py Anda
-    private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\CodeWorkspace\\DockerGenerate\\testing\\train_and_evaluate.py";
+//    private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\CodeWorkspace\\DockerGenerate\\testing\\train_and_evaluate.py";
+    private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\NetBeansProjects\\EyeDiseasesClassifier\\train_and_evaluate.py";
 
     // === Injeksi FXML (Panel Kontrol) ===
     @FXML private Button btnInputDataset;
