@@ -1,4 +1,4 @@
-package eyepred.eyediseasesclassifier;
+package eyepred.eyediseasesclassifier; // Ganti dengan package Anda
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,15 +8,20 @@ import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
+import javafx.scene.Scene; // Import BARU
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.XYChart;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.MouseEvent; // Import BARU
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane; // Import BARU
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.Modality; // Import BARU
+import javafx.stage.Stage; // Import BARU
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -28,10 +33,10 @@ import java.util.Map;
 
 public class MainController {
 
-    // === Path ke Skrip Python ===
-    // Sesuaikan path python executable jika perlu
-    private static final String PYTHON_EXECUTABLE = "C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"; 
-    private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\CodeWorkspace\\DockerGenerate\\testing\\train_and_evaluate.py";
+    // === Path ke Skrip Python (GANTI INI) ===
+    // Path ini diambil dari file MainController.java yang Anda unggah
+    private static final String PYTHON_EXECUTABLE = "C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"; //
+    private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\CodeWorkspace\\DockerGenerate\\testing\\train_and_evaluate.py"; //
 
     // === Injeksi FXML (Panel Kontrol) ===
     @FXML private Button btnInputDataset;
@@ -48,8 +53,8 @@ public class MainController {
     @FXML private Label lblOutputPath;
     @FXML private Button btnStartTraining;
 
-    // === Injeksi FXML (Panel Output - Single View) ===
-    // Tidak ada TabPane lagi
+    // === Injeksi FXML (Panel Output) ===
+    // @FXML private TabPane tabPaneOutput; // Dihapus
     @FXML private LineChart<Number, Number> chartTraining;
     @FXML private Label lblAkurasi;
     @FXML private Label lblPresisi;
@@ -58,12 +63,15 @@ public class MainController {
     @FXML private ImageView imgConfusionMatrix;
     @FXML private TextArea txtClassificationReport;
     @FXML private TextArea txtLog;
+
+    // === Injeksi FXML (Galeri) ===
     @FXML private ListView<GalleryItem> galleryListView;
 
     // === Injeksi FXML (Loading) ===
     @FXML private VBox loadingPane;
     @FXML private Label lblLoadingStatus;
     @FXML private ProgressBar progressBar;
+    @FXML private Button btnBatal; // <-- BARU
 
     // === Variabel Internal ===
     private File inputDir;
@@ -72,6 +80,11 @@ public class MainController {
     private XYChart.Series<Number, Number> accuracySeries;
     private XYChart.Series<Number, Number> lossSeries;
 
+    // === BARU: Variabel untuk Task & Process Control ===
+    private Task<Boolean> runningTask;
+    private Process runningPythonProcess;
+
+    // === Model data untuk galeri ===
     public static class GalleryItem {
         public String fileName;
         public String actualLabel;
@@ -145,7 +158,6 @@ public class MainController {
 
         // 2. Bersihkan UI
         clearResultsUI();
-        // Tidak perlu pindah tab lagi
 
         // 3. Buat Perintah Python
         List<String> command = buildPythonCommand(trainSplit, valSplit, testSplit, epochs, dropout);
@@ -169,38 +181,110 @@ public class MainController {
                 showAlert(Alert.AlertType.INFORMATION, "Sukses", "Training dan evaluasi selesai. Memuat hasil...");
                 loadResults();
             } else {
-                showAlert(Alert.AlertType.ERROR, "Gagal", "Proses Python gagal. Periksa log di bagian atas.");
+                if (!trainingTask.isCancelled()) {
+                     showAlert(Alert.AlertType.ERROR, "Gagal", "Proses Python gagal. Periksa log di bagian atas.");
+                }
             }
+            runningTask = null;
+            runningPythonProcess = null;
         });
 
         trainingTask.setOnFailed(e -> {
             loadingPane.setVisible(false);
             btnStartTraining.setDisable(false);
-            showAlert(Alert.AlertType.ERROR, "Error Kritis", "Gagal menjalankan task: " + trainingTask.getException().getMessage());
-            trainingTask.getException().printStackTrace();
+            if (!trainingTask.isCancelled()) {
+                showAlert(Alert.AlertType.ERROR, "Error Kritis", "Gagal menjalankan task: " + trainingTask.getException().getMessage());
+                trainingTask.getException().printStackTrace();
+            }
+            runningTask = null;
+            runningPythonProcess = null;
         });
 
-        // 6. Jalankan Task
-        new Thread(trainingTask).start();
+        // === BARU: Handler untuk Batal ===
+        trainingTask.setOnCancelled(e -> {
+            loadingPane.setVisible(false);
+            btnStartTraining.setDisable(false);
+            txtLog.appendText("\n--- PROSES DIBATALKAN OLEH PENGGUNA ---\n");
+            showAlert(Alert.AlertType.WARNING, "Dibatalkan", "Proses training telah dibatalkan.");
+            
+            runningTask = null;
+            runningPythonProcess = null;
+        });
+
+
+        // 6. Simpan referensi dan Jalankan Task
+        this.runningTask = trainingTask;
+        new Thread(this.runningTask).start();
     }
+    
+    /**
+     * === BARU: Handler untuk tombol Batal ===
+     */
+    @FXML
+    private void handleBatal() {
+        txtLog.appendText("\n--- MEMBATALKAN PROSES... ---\n");
+        
+        // Hancurkan proses Python
+        if (this.runningPythonProcess != null) {
+            // destroyForcibly() membunuh proses dan sub-prosesnya (penting untuk Python)
+            this.runningPythonProcess.destroyForcibly(); 
+        }
+        
+        // Batalkan Task JavaFX
+        if (this.runningTask != null) {
+            this.runningTask.cancel(true); // Mengirim interrupt ke thread task
+        }
+    }
+    
+    /**
+     * === BARU: Handler untuk Zoom Confusion Matrix ===
+     */
+    @FXML
+    private void handleZoomConfusionMatrix(MouseEvent event) {
+        if (imgConfusionMatrix.getImage() == null) {
+            return;
+        }
+
+        // Buat ImageView baru untuk dialog
+        ImageView zoomView = new ImageView(imgConfusionMatrix.getImage());
+        zoomView.setPreserveRatio(true);
+
+        // Buat ScrollPane agar bisa di-pan jika gambar lebih besar dari window
+        ScrollPane scrollPane = new ScrollPane(zoomView);
+        scrollPane.setPannable(true);
+        scrollPane.setStyle("-fx-background: #333;"); // Latar belakang gelap
+
+        // StackPane untuk menengahkan gambar di dalam ScrollPane
+        StackPane zoomLayout = new StackPane(scrollPane);
+        zoomLayout.setStyle("-fx-background-color: #333;");
+        
+        // Tentukan ukuran awal window pop-up
+        double width = Math.min(800, imgConfusionMatrix.getImage().getWidth() + 40);
+        double height = Math.min(700, imgConfusionMatrix.getImage().getHeight() + 40);
+
+        Scene zoomScene = new Scene(zoomLayout, width, height);
+
+        Stage zoomStage = new Stage();
+        zoomStage.setTitle("Confusion Matrix - Zoom");
+        zoomStage.initModality(Modality.APPLICATION_MODAL); // Blok window utama
+        zoomStage.initOwner(btnStartTraining.getScene().getWindow()); // Set owner
+        zoomStage.setScene(zoomScene);
+        zoomStage.showAndWait();
+    }
+
 
     private List<String> buildPythonCommand(int train, int val, int test, int epochs, float dropout) {
         List<String> command = new ArrayList<>();
         command.add(PYTHON_EXECUTABLE);
         command.add(PYTHON_SCRIPT_PATH);
-        
         command.add("--input-dir");
         command.add(inputDir.getAbsolutePath());
-        
         command.add("--output-dir");
         command.add(outputDir.getAbsolutePath());
-        
         command.add("--split-ratio");
         command.add(String.format("%d,%d,%d", train, val, test));
-        
         command.add("--epochs");
         command.add(String.valueOf(epochs));
-        
         command.add("--dropout-rate");
         command.add(String.valueOf(dropout));
         
@@ -209,7 +293,6 @@ public class MainController {
              command.add("--dense-neurons");
              command.add(denseNeurons);
         }
-       
         if (chkBalanceData.isSelected()) {
             command.add("--balance-data");
         }
@@ -235,13 +318,19 @@ public class MainController {
                 
                 ProcessBuilder processBuilder = new ProcessBuilder(command);
                 processBuilder.redirectErrorStream(true);
-                Process process = processBuilder.start();
+                
+                // Simpan referensi proses
+                runningPythonProcess = processBuilder.start(); 
 
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(runningPythonProcess.getInputStream()))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
-                        final String logLine = line;
+                        // Jika task dibatalkan, berhenti membaca
+                        if (isCancelled()) {
+                            break;
+                        }
                         
+                        final String logLine = line;
                         Platform.runLater(() -> txtLog.appendText(logLine + "\n"));
 
                         if (logLine.trim().startsWith("{\"epoch\":")) {
@@ -261,13 +350,21 @@ public class MainController {
                                 });
 
                             } catch (Exception e) {
-                                System.err.println("Gagal parse JSON real-time: " + e.getMessage());
+                                if (!isCancelled()) {
+                                    System.err.println("Gagal parse JSON real-time: " + e.getMessage());
+                                }
                             }
                         }
                     }
                 }
 
-                int exitCode = process.waitFor();
+                int exitCode = runningPythonProcess.waitFor();
+                runningPythonProcess = null; 
+                
+                if (isCancelled()) {
+                    return false; 
+                }
+                
                 return exitCode == 0;
             }
         };
@@ -276,16 +373,13 @@ public class MainController {
     private void clearResultsUI() {
         accuracySeries.getData().clear();
         lossSeries.getData().clear();
-        
         lblAkurasi.setText("-");
         lblPresisi.setText("-");
         lblRecall.setText("-");
         lblF1.setText("-");
-        
         imgConfusionMatrix.setImage(null);
-        
         txtClassificationReport.clear();
-        txtLog.clear();
+        txtLog.clear(); // Hapus log sebelumnya
 
         if (galleryListView != null) {
             galleryListView.setItems(FXCollections.observableArrayList());
@@ -361,7 +455,7 @@ public class MainController {
     }
 
     // ==========================================================
-    // === FUNGSI-FUNGSI GALERI ===
+    // === FUNGSI-FUNGSI GALERI (Tidak Berubah) ===
     // ==========================================================
     
     private void setupGalleryCellFactory() {
@@ -496,6 +590,10 @@ public class MainController {
 
         return null;
     }
+
+    // ==========================================================
+    // === FUNGSI HELPER ALERT (Tidak Berubah) ===
+    // ==========================================================
 
     private void showAlert(Alert.AlertType type, String title, String message) {
         if (!Platform.isFxApplicationThread()) {
