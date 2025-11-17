@@ -30,7 +30,7 @@
             <goal>clean</goal>
             <goal>javafx:run@ide-profile</goal>
         </goals>
-         <properties>
+        <properties>
             <run.jvmArguments>-XX:HeapBaseMinAddress=5g</run.jvmArguments>
         </properties>
     </action>
