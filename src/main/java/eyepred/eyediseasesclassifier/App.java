@@ -11,7 +11,7 @@ public class App extends Application {
     @Override
     public void start(Stage stage) throws IOException {
         FXMLLoader fxmlLoader = new FXMLLoader(App.class.getResource("MainView.fxml"));
-        Scene scene = new Scene(fxmlLoader.load(), 1200, 800); // Ukuran window diperbesar
+        Scene scene = new Scene(fxmlLoader.load(), 1600, 850); // Ukuran window diperbesar
         
         // 1. Judul aplikasi pada window
         stage.setTitle("Interactive Image Classifier (VGG16)");

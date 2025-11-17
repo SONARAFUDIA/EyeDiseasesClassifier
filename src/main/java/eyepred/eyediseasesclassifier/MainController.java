@@ -1,4 +1,4 @@
-package eyepred.eyediseasesclassifier; // Ganti dengan package Anda
+package eyepred.eyediseasesclassifier;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,11 +28,10 @@ import java.util.Map;
 
 public class MainController {
 
-    // === Path ke Skrip Python (GANTI INI) ===
-    private static final String PYTHON_EXECUTABLE = "C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"; // atau "python3"
-    // GANTI PATH INI ke lokasi skrip train_and_evaluate.py Anda
-//    private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\CodeWorkspace\\DockerGenerate\\testing\\train_and_evaluate.py";
-    private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\NetBeansProjects\\EyeDiseasesClassifier\\train_and_evaluate.py";
+    // === Path ke Skrip Python ===
+    // Sesuaikan path python executable jika perlu
+    private static final String PYTHON_EXECUTABLE = "C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"; 
+    private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\CodeWorkspace\\DockerGenerate\\testing\\train_and_evaluate.py";
 
     // === Injeksi FXML (Panel Kontrol) ===
     @FXML private Button btnInputDataset;
@@ -49,8 +48,8 @@ public class MainController {
     @FXML private Label lblOutputPath;
     @FXML private Button btnStartTraining;
 
-    // === Injeksi FXML (Panel Output) ===
-    @FXML private TabPane tabPaneOutput;
+    // === Injeksi FXML (Panel Output - Single View) ===
+    // Tidak ada TabPane lagi
     @FXML private LineChart<Number, Number> chartTraining;
     @FXML private Label lblAkurasi;
     @FXML private Label lblPresisi;
@@ -59,8 +58,6 @@ public class MainController {
     @FXML private ImageView imgConfusionMatrix;
     @FXML private TextArea txtClassificationReport;
     @FXML private TextArea txtLog;
-
-    // === Injeksi FXML (Galeri) ===
     @FXML private ListView<GalleryItem> galleryListView;
 
     // === Injeksi FXML (Loading) ===
@@ -75,7 +72,6 @@ public class MainController {
     private XYChart.Series<Number, Number> accuracySeries;
     private XYChart.Series<Number, Number> lossSeries;
 
-    // === Model data untuk galeri ===
     public static class GalleryItem {
         public String fileName;
         public String actualLabel;
@@ -149,7 +145,7 @@ public class MainController {
 
         // 2. Bersihkan UI
         clearResultsUI();
-        tabPaneOutput.getSelectionModel().select(0); // Pindah ke tab Monitoring
+        // Tidak perlu pindah tab lagi
 
         // 3. Buat Perintah Python
         List<String> command = buildPythonCommand(trainSplit, valSplit, testSplit, epochs, dropout);
@@ -172,12 +168,8 @@ public class MainController {
             if (trainingTask.getValue()) {
                 showAlert(Alert.AlertType.INFORMATION, "Sukses", "Training dan evaluasi selesai. Memuat hasil...");
                 loadResults();
-                // Pindah ke tab Hasil Evaluasi (indeks 1)
-                tabPaneOutput.getSelectionModel().select(1); 
             } else {
-                showAlert(Alert.AlertType.ERROR, "Gagal", "Proses Python gagal. Periksa tab Log untuk detail.");
-                // Pindah ke tab Log (indeks 5)
-                tabPaneOutput.getSelectionModel().select(5); // <-- PERUBAHAN DI SINI
+                showAlert(Alert.AlertType.ERROR, "Gagal", "Proses Python gagal. Periksa log di bagian atas.");
             }
         });
 
@@ -186,8 +178,6 @@ public class MainController {
             btnStartTraining.setDisable(false);
             showAlert(Alert.AlertType.ERROR, "Error Kritis", "Gagal menjalankan task: " + trainingTask.getException().getMessage());
             trainingTask.getException().printStackTrace();
-            // Pindah ke tab Log (indeks 5)
-            tabPaneOutput.getSelectionModel().select(5); // <-- PERUBAHAN DI SINI
         });
 
         // 6. Jalankan Task
@@ -371,7 +361,7 @@ public class MainController {
     }
 
     // ==========================================================
-    // === FUNGSI-FUNGSI GALERI (DARI CONTROLLER LAMA) ===
+    // === FUNGSI-FUNGSI GALERI ===
     // ==========================================================
     
     private void setupGalleryCellFactory() {
@@ -506,10 +496,6 @@ public class MainController {
 
         return null;
     }
-
-    // ==========================================================
-    // === FUNGSI HELPER ALERT (TETAP SAMA) ===
-    // ==========================================================
 
     private void showAlert(Alert.AlertType type, String title, String message) {
         if (!Platform.isFxApplicationThread()) {
