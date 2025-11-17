@@ -8,20 +8,20 @@ import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
-import javafx.scene.Scene; // Import BARU
+import javafx.scene.Scene;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.XYChart;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
-import javafx.scene.input.MouseEvent; // Import BARU
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.StackPane; // Import BARU
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.DirectoryChooser;
-import javafx.stage.Modality; // Import BARU
-import javafx.stage.Stage; // Import BARU
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -34,7 +34,6 @@ import java.util.Map;
 public class MainController {
 
     // === Path ke Skrip Python (GANTI INI) ===
-    // Path ini diambil dari file MainController.java yang Anda unggah
     private static final String PYTHON_EXECUTABLE = "C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"; //
     private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\CodeWorkspace\\DockerGenerate\\testing\\train_and_evaluate.py"; //
 
@@ -52,9 +51,9 @@ public class MainController {
     @FXML private Button btnOutputDir;
     @FXML private Label lblOutputPath;
     @FXML private Button btnStartTraining;
+    @FXML private Button btnBatal; // <-- Tombol Batal sekarang ada di sini
 
     // === Injeksi FXML (Panel Output) ===
-    // @FXML private TabPane tabPaneOutput; // Dihapus
     @FXML private LineChart<Number, Number> chartTraining;
     @FXML private Label lblAkurasi;
     @FXML private Label lblPresisi;
@@ -71,7 +70,7 @@ public class MainController {
     @FXML private VBox loadingPane;
     @FXML private Label lblLoadingStatus;
     @FXML private ProgressBar progressBar;
-    @FXML private Button btnBatal; // <-- BARU
+    // Tombol Batal @FXML dihapus dari loadingPane
 
     // === Variabel Internal ===
     private File inputDir;
@@ -80,7 +79,7 @@ public class MainController {
     private XYChart.Series<Number, Number> accuracySeries;
     private XYChart.Series<Number, Number> lossSeries;
 
-    // === BARU: Variabel untuk Task & Process Control ===
+    // === Variabel untuk Task & Process Control ===
     private Task<Boolean> runningTask;
     private Process runningPythonProcess;
 
@@ -104,6 +103,7 @@ public class MainController {
         chartTraining.getData().addAll(accuracySeries, lossSeries);
 
         loadingPane.setVisible(false);
+        btnBatal.setDisable(true); // <-- Tombol Batal nonaktif saat awal
 
         // Setup fungsionalitas galeri
         setupGalleryCellFactory();
@@ -172,11 +172,14 @@ public class MainController {
         trainingTask.setOnRunning(e -> {
             loadingPane.setVisible(true);
             btnStartTraining.setDisable(true);
+            btnBatal.setDisable(false); // <-- Aktifkan tombol Batal
         });
 
         trainingTask.setOnSucceeded(e -> {
             loadingPane.setVisible(false);
             btnStartTraining.setDisable(false);
+            btnBatal.setDisable(true); // <-- Nonaktifkan tombol Batal
+            
             if (trainingTask.getValue()) {
                 showAlert(Alert.AlertType.INFORMATION, "Sukses", "Training dan evaluasi selesai. Memuat hasil...");
                 loadResults();
@@ -192,6 +195,8 @@ public class MainController {
         trainingTask.setOnFailed(e -> {
             loadingPane.setVisible(false);
             btnStartTraining.setDisable(false);
+            btnBatal.setDisable(true); // <-- Nonaktifkan tombol Batal
+            
             if (!trainingTask.isCancelled()) {
                 showAlert(Alert.AlertType.ERROR, "Error Kritis", "Gagal menjalankan task: " + trainingTask.getException().getMessage());
                 trainingTask.getException().printStackTrace();
@@ -200,10 +205,11 @@ public class MainController {
             runningPythonProcess = null;
         });
 
-        // === BARU: Handler untuk Batal ===
         trainingTask.setOnCancelled(e -> {
             loadingPane.setVisible(false);
             btnStartTraining.setDisable(false);
+            btnBatal.setDisable(true); // <-- Nonaktifkan tombol Batal
+            
             txtLog.appendText("\n--- PROSES DIBATALKAN OLEH PENGGUNA ---\n");
             showAlert(Alert.AlertType.WARNING, "Dibatalkan", "Proses training telah dibatalkan.");
             
@@ -211,33 +217,29 @@ public class MainController {
             runningPythonProcess = null;
         });
 
-
         // 6. Simpan referensi dan Jalankan Task
         this.runningTask = trainingTask;
         new Thread(this.runningTask).start();
     }
     
     /**
-     * === BARU: Handler untuk tombol Batal ===
+     * Handler untuk tombol Batal
      */
     @FXML
     private void handleBatal() {
         txtLog.appendText("\n--- MEMBATALKAN PROSES... ---\n");
         
-        // Hancurkan proses Python
         if (this.runningPythonProcess != null) {
-            // destroyForcibly() membunuh proses dan sub-prosesnya (penting untuk Python)
             this.runningPythonProcess.destroyForcibly(); 
         }
         
-        // Batalkan Task JavaFX
         if (this.runningTask != null) {
-            this.runningTask.cancel(true); // Mengirim interrupt ke thread task
+            this.runningTask.cancel(true);
         }
     }
     
     /**
-     * === BARU: Handler untuk Zoom Confusion Matrix ===
+     * Handler untuk Zoom Confusion Matrix
      */
     @FXML
     private void handleZoomConfusionMatrix(MouseEvent event) {
@@ -245,20 +247,16 @@ public class MainController {
             return;
         }
 
-        // Buat ImageView baru untuk dialog
         ImageView zoomView = new ImageView(imgConfusionMatrix.getImage());
         zoomView.setPreserveRatio(true);
 
-        // Buat ScrollPane agar bisa di-pan jika gambar lebih besar dari window
         ScrollPane scrollPane = new ScrollPane(zoomView);
         scrollPane.setPannable(true);
-        scrollPane.setStyle("-fx-background: #333;"); // Latar belakang gelap
+        scrollPane.setStyle("-fx-background: #333;");
 
-        // StackPane untuk menengahkan gambar di dalam ScrollPane
         StackPane zoomLayout = new StackPane(scrollPane);
         zoomLayout.setStyle("-fx-background-color: #333;");
         
-        // Tentukan ukuran awal window pop-up
         double width = Math.min(800, imgConfusionMatrix.getImage().getWidth() + 40);
         double height = Math.min(700, imgConfusionMatrix.getImage().getHeight() + 40);
 
@@ -266,8 +264,8 @@ public class MainController {
 
         Stage zoomStage = new Stage();
         zoomStage.setTitle("Confusion Matrix - Zoom");
-        zoomStage.initModality(Modality.APPLICATION_MODAL); // Blok window utama
-        zoomStage.initOwner(btnStartTraining.getScene().getWindow()); // Set owner
+        zoomStage.initModality(Modality.APPLICATION_MODAL);
+        zoomStage.initOwner(btnStartTraining.getScene().getWindow());
         zoomStage.setScene(zoomScene);
         zoomStage.showAndWait();
     }
@@ -319,13 +317,11 @@ public class MainController {
                 ProcessBuilder processBuilder = new ProcessBuilder(command);
                 processBuilder.redirectErrorStream(true);
                 
-                // Simpan referensi proses
                 runningPythonProcess = processBuilder.start(); 
 
                 try (BufferedReader reader = new BufferedReader(new InputStreamReader(runningPythonProcess.getInputStream()))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
-                        // Jika task dibatalkan, berhenti membaca
                         if (isCancelled()) {
                             break;
                         }
