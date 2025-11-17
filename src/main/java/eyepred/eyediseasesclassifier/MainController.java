@@ -8,20 +8,21 @@ import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
-import javafx.scene.Scene;
+import javafx.scene.Scene; // Import BARU
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.XYChart;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
-import javafx.scene.input.MouseEvent;
+import javafx.scene.input.MouseEvent; // Import BARU
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.StackPane;
+import javafx.scene.layout.StackPane; // Import BARU
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.DirectoryChooser;
-import javafx.stage.Modality;
-import javafx.stage.Stage;
+import javafx.stage.FileChooser; // Import BARU
+import javafx.stage.Modality; // Import BARU
+import javafx.stage.Stage; // Import BARU
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -34,8 +35,8 @@ import java.util.Map;
 public class MainController {
 
     // === Path ke Skrip Python (GANTI INI) ===
-    private static final String PYTHON_EXECUTABLE = "C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"; //
-    private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\CodeWorkspace\\DockerGenerate\\testing\\train_and_evaluate.py"; //
+    private static final String PYTHON_EXECUTABLE = "C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python313\\python.exe";
+    private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\CodeWorkspace\\DockerGenerate\\testing\\train_and_evaluate.py";
 
     // === Injeksi FXML (Panel Kontrol) ===
     @FXML private Button btnInputDataset;
@@ -51,7 +52,13 @@ public class MainController {
     @FXML private Button btnOutputDir;
     @FXML private Label lblOutputPath;
     @FXML private Button btnStartTraining;
-    @FXML private Button btnBatal; // <-- Tombol Batal sekarang ada di sini
+    @FXML private Button btnBatal; // <-- BARU
+
+    // === BARU: Injeksi FXML untuk Lanjutkan Training ===
+    @FXML private Button btnLoadModel;
+    @FXML private Button btnClearModel;
+    @FXML private Label lblLoadModelPath;
+    @FXML private VBox vboxVggConfig; // <-- VBox yang membungkus konfigurasi VGG16
 
     // === Injeksi FXML (Panel Output) ===
     @FXML private LineChart<Number, Number> chartTraining;
@@ -70,11 +77,11 @@ public class MainController {
     @FXML private VBox loadingPane;
     @FXML private Label lblLoadingStatus;
     @FXML private ProgressBar progressBar;
-    // Tombol Batal @FXML dihapus dari loadingPane
-
+    
     // === Variabel Internal ===
     private File inputDir;
     private File outputDir;
+    private File loadModelFile = null; // <-- BARU: Untuk menyimpan model yang akan diload
     private final ObjectMapper objectMapper = new ObjectMapper();
     private XYChart.Series<Number, Number> accuracySeries;
     private XYChart.Series<Number, Number> lossSeries;
@@ -103,7 +110,10 @@ public class MainController {
         chartTraining.getData().addAll(accuracySeries, lossSeries);
 
         loadingPane.setVisible(false);
-        btnBatal.setDisable(true); // <-- Tombol Batal nonaktif saat awal
+        
+        // Atur kondisi awal tombol
+        btnBatal.setDisable(true);
+        handleClearLoadModel(); // Atur state awal untuk panel config VGG16
 
         // Setup fungsionalitas galeri
         setupGalleryCellFactory();
@@ -131,6 +141,31 @@ public class MainController {
             lblOutputPath.setText(outputDir.getAbsolutePath());
         }
     }
+    
+    // === HANDLER BARU: Pilih Model untuk Dilanjutkan ===
+    @FXML
+    private void handleLoadModel() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Pilih File Model (.h5) untuk Dilanjutkan");
+        fileChooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("Model Keras", "*.h5")
+        );
+        File selectedFile = fileChooser.showOpenDialog(btnLoadModel.getScene().getWindow());
+        if (selectedFile != null && selectedFile.exists()) {
+            loadModelFile = selectedFile;
+            lblLoadModelPath.setText("Lanjut dari: " + selectedFile.getName());
+            vboxVggConfig.setDisable(true); // Nonaktifkan config VGG16
+        }
+    }
+
+    // === HANDLER BARU: Bersihkan Pilihan Model ===
+    @FXML
+    private void handleClearLoadModel() {
+        loadModelFile = null;
+        lblLoadModelPath.setText("Akan train dari awal (VGG16)");
+        vboxVggConfig.setDisable(false); // Aktifkan kembali config VGG16
+    }
+
 
     @FXML
     private void handleStartTraining() {
@@ -150,7 +185,8 @@ public class MainController {
                 return;
             }
             epochs = Integer.parseInt(txtEpochs.getText());
-            dropout = Float.parseFloat(txtDropoutRate.getText());
+            // Dropout hanya dibaca jika kita tidak me-load model
+            dropout = (loadModelFile == null) ? Float.parseFloat(txtDropoutRate.getText()) : 0.0f;
         } catch (NumberFormatException e) {
             showAlert(Alert.AlertType.ERROR, "Error", "Input Epoch, Split, dan Dropout harus berupa angka valid.");
             return;
@@ -275,6 +311,8 @@ public class MainController {
         List<String> command = new ArrayList<>();
         command.add(PYTHON_EXECUTABLE);
         command.add(PYTHON_SCRIPT_PATH);
+        
+        // Argumen yang selalu ada
         command.add("--input-dir");
         command.add(inputDir.getAbsolutePath());
         command.add("--output-dir");
@@ -283,19 +321,29 @@ public class MainController {
         command.add(String.format("%d,%d,%d", train, val, test));
         command.add("--epochs");
         command.add(String.valueOf(epochs));
-        command.add("--dropout-rate");
-        command.add(String.valueOf(dropout));
         
-        String denseNeurons = txtDenseNeurons.getText().trim();
-        if (!denseNeurons.isEmpty()) {
-             command.add("--dense-neurons");
-             command.add(denseNeurons);
-        }
         if (chkBalanceData.isSelected()) {
             command.add("--balance-data");
         }
-        if (chkFreezeBase.isSelected()) {
-            command.add("--freeze-base");
+        
+        // Argumen Kondisional (BARU)
+        if (loadModelFile != null) {
+            // Jika melanjutkan training
+            command.add("--load-model-path");
+            command.add(loadModelFile.getAbsolutePath());
+        } else {
+            // Jika training dari awal (VGG16)
+            command.add("--dropout-rate");
+            command.add(String.valueOf(dropout));
+            
+            String denseNeurons = txtDenseNeurons.getText().trim();
+            if (!denseNeurons.isEmpty()) {
+                 command.add("--dense-neurons");
+                 command.add(denseNeurons);
+            }
+            if (chkFreezeBase.isSelected()) {
+                command.add("--freeze-base");
+            }
         }
         
         System.out.println("Executing command: " + String.join(" ", command));
@@ -380,6 +428,9 @@ public class MainController {
         if (galleryListView != null) {
             galleryListView.setItems(FXCollections.observableArrayList());
         }
+        
+        // Reset juga pilihan model
+        handleClearLoadModel();
     }
 
     private void loadResults() {

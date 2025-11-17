@@ -8,11 +8,9 @@
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ListView?>
 <?import javafx.scene.control.ProgressBar?>
-<?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.SplitPane?>
 <?import javafx.scene.control.TextArea?>
 <?import javafx.scene.control.TextField?>
-<?import javafx.scene.control.TitledPane?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.ColumnConstraints?>
 <?import javafx.scene.layout.GridPane?>
@@ -37,99 +35,91 @@
             
             <SplitPane dividerPositions="0.25, 0.65" VBox.vgrow="ALWAYS">
                <items>
-                  <ScrollPane fitToWidth="true" hbarPolicy="NEVER">
-                     <content>
-                        <VBox spacing="15.0">
+                  <VBox prefWidth="445.0" spacing="15.0">
+                     <padding>
+                        <Insets right="5.0" />
+                     </padding>
+                     <children>
+                        <VBox prefHeight="717.0" prefWidth="281.0" spacing="10.0">
                            <padding>
-                              <Insets right="5.0" />
+                              <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
                            </padding>
                            <children>
-                              <TitledPane collapsible="false" text="1. Modul Persiapan Data">
-                                 <content>
-                                    <VBox spacing="10.0">
-                                       <padding>
-                                          <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
-                                       </padding>
+                              <Label style="-fx-font-weight: bold;" text="Pemuatan Dataset:" />
+                              <Button fx:id="btnInputDataset" maxWidth="1.7976931348623157E308" onAction="#handleInputDataset" text="Pilih Folder Dataset..." />
+                              <Label fx:id="lblInputPath" style="-fx-text-fill: gray;" text="Belum ada folder dipilih" />
+                              <Label style="-fx-font-weight: bold;" text="Penyeimbangan (Balancing) Data:" />
+                              <CheckBox fx:id="chkBalanceData" text="Seimbangkan Dataset (Gunakan Class Weights)" />
+                              <Label style="-fx-font-weight: bold;" text="Pembagian Rasio (total harus 100):" />
+                              <HBox alignment="CENTER_LEFT" spacing="10.0">
+                                 <children>
+                                    <Label text="Train:" />
+                                    <TextField fx:id="txtSplitTrain" prefWidth="60.0" text="70" />
+                                    <Label text="Val:" />
+                                    <TextField fx:id="txtSplitVal" prefWidth="60.0" text="15" />
+                                    <Label text="Test:" />
+                                    <TextField fx:id="txtSplitTest" prefWidth="60.0" text="15" />
+                                 </children>
+                              </HBox>
+                              <Label prefHeight="17.0" prefWidth="313.0" style="-fx-font-weight: bold;" text="Konfigurasi Model:" />
+                              <VBox spacing="10.0">
+                                 <padding>
+                                    <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+                                 </padding>
+                                 <children>
+                                    <HBox spacing="5.0">
                                        <children>
-                                          <Label style="-fx-font-weight: bold;" text="Pemuatan Dataset:" />
-                                          <Button fx:id="btnInputDataset" onAction="#handleInputDataset" text="Pilih Folder Dataset..." />
-                                          <Label fx:id="lblInputPath" style="-fx-text-fill: gray;" text="Belum ada folder dipilih" />
-                                          <Label style="-fx-font-weight: bold;" text="Penyeimbangan (Balancing) Data:" />
-                                          <CheckBox fx:id="chkBalanceData" text="Seimbangkan Dataset (Gunakan Class Weights)" />
-                                          <Label style="-fx-font-weight: bold;" text="Pembagian Rasio (total harus 100):" />
-                                          <HBox alignment="CENTER_LEFT" spacing="10.0">
-                                             <children>
-                                                <Label text="Train:" />
-                                                <TextField fx:id="txtSplitTrain" prefWidth="60.0" text="70" />
-                                                <Label text="Val:" />
-                                                <TextField fx:id="txtSplitVal" prefWidth="60.0" text="15" />
-                                                <Label text="Test:" />
-                                                <TextField fx:id="txtSplitTest" prefWidth="60.0" text="15" />
-                                             </children>
-                                          </HBox>
+                                          <Button fx:id="btnLoadModel" maxWidth="1.7976931348623157E308" onAction="#handleLoadModel" text="Lanjutkan Training Model. Pilih Model .h5..." HBox.hgrow="ALWAYS" />
+                                          <Button fx:id="btnClearModel" minWidth="-Infinity" onAction="#handleClearLoadModel" style="-fx-background-color: #E0E0E0;" text="X" />
                                        </children>
-                                    </VBox>
-                                 </content>
-                              </TitledPane>
-                              <TitledPane collapsible="false" text="2. Modul Konfigurasi Model &amp; Training">
-                                 <content>
-                                    <VBox spacing="10.0">
-                                       <padding>
-                                          <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
-                                       </padding>
+                                    </HBox>
+                                    <Label fx:id="lblLoadModelPath" style="-fx-text-fill: gray; -fx-font-style: italic;" text="Akan train dari awal (VGG16)" wrapText="true" />
+                                    
+                                                      <VBox fx:id="vboxVggConfig" spacing="10.0">
                                        <children>
-                                          <Label style="-fx-font-weight: bold;" text="Kontrol Transfer Learning:" />
+                                          <Label style="-fx-font-weight: bold;" text="Konfigurasi VGG16 (Hanya untuk model baru):" />
                                           <CheckBox fx:id="chkFreezeBase" selected="true" text="Bekukan (Freeze) Layer VGG16" />
-                                          <Label style="-fx-font-weight: bold;" text="Kustomisasi Arsitektur (Classifier Head):" />
                                           <Label text="Neurons (pisahkan dengan koma, misal: 512, 256)" />
                                           <TextField fx:id="txtDenseNeurons" promptText="e.g., 512" text="512" />
                                           <Label text="Dropout Rate Dengan Range 0-1" />
                                           <TextField fx:id="txtDropoutRate" prefWidth="80.0" promptText="e.g., 0.5" text="0.5" />
-                                          <Label style="-fx-font-weight: bold;" text="Pengaturan Jumlah  Epoch:" />
-                                          <TextField fx:id="txtEpochs" prefWidth="80.0" text="10" />
                                        </children>
-                                    </VBox>
-                                 </content>
-                              </TitledPane>
-                              <TitledPane collapsible="false" text="3. Lokasi Output">
-                                 <content>
-                                    <VBox spacing="10.0">
                                        <padding>
-                                          <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+                                          <Insets top="10.0" />
                                        </padding>
-                                       <children>
-                                          <Button fx:id="btnOutputDir" onAction="#handleOutputFolder" text="Pilih Folder Output..." />
-                                          <Label fx:id="lblOutputPath" style="-fx-text-fill: gray;" text="Belum ada folder dipilih" />
-                                       </children>
                                     </VBox>
-                                 </content>
-                              </TitledPane>
+                                    
+                                                      <Label style="-fx-font-weight: bold;" text="Pengaturan Jumlah Epoch:" />
+                                    <TextField fx:id="txtEpochs" prefWidth="80.0" text="10" />
+                                 </children>
+                              </VBox>
+                              <Label prefHeight="17.0" prefWidth="313.0" style="-fx-font-weight: bold;" text="Output Model:" />
+                              <Button fx:id="btnOutputDir" maxWidth="1.7976931348623157E308" onAction="#handleOutputFolder" text="Pilih Folder Output..." />
+                              <Label fx:id="lblOutputPath" style="-fx-text-fill: gray;" text="Belum ada folder dipilih" />
                               
-                              <Button fx:id="btnStartTraining" maxWidth="1.7976931348623157E308" onAction="#handleStartTraining" style="-fx-font-weight: bold; -fx-font-size: 16px; -fx-background-color: #4CAF50; -fx-text-fill: white;" text="Mulai Training &amp; Evaluasi" HBox.hgrow="ALWAYS" />
-                              
+                                          <Button fx:id="btnStartTraining" maxWidth="1.7976931348623157E308" onAction="#handleStartTraining" style="-fx-font-weight: bold; -fx-font-size: 16px; -fx-background-color: #4CAF50; -fx-text-fill: white;" text="Mulai Training &amp; Evaluasi" />
                               <Button fx:id="btnBatal" maxWidth="1.7976931348623157E308" mnemonicParsing="false" onAction="#handleBatal" style="-fx-background-color: #f44336; -fx-text-fill: white;" text="Batalkan Training" />
-                              
                            </children>
                         </VBox>
-                     </content>
-                  </ScrollPane>
+                     </children>
+                  </VBox>
                   
-                  <VBox spacing="10.0">
+                  <VBox prefHeight="871.0" prefWidth="499.0" spacing="10.0" VBox.vgrow="ALWAYS">
                      <padding>
                         <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
                      </padding>
                      <children>
-                        <Label style="-fx-font-weight: bold;" text="Log Eksekusi &amp; Monitoring 📈" />
+                        <Label style="-fx-font-weight: bold;" text="Log Eksekusi &amp; Monitoring" />
                         <TextArea fx:id="txtLog" editable="false" prefHeight="200.0" style="-fx-font-family: 'monospaced'; -fx-font-size: 11px;" wrapText="true" VBox.vgrow="SOMETIMES" />
-                        <LineChart fx:id="chartTraining" animated="false" createSymbols="false" prefHeight="250.0" title="Grafik Training (Validasi)" VBox.vgrow="ALWAYS">
+                        <LineChart fx:id="chartTraining" animated="false" createSymbols="false" prefHeight="185.0" prefWidth="585.0" title="Grafik Training (Validasi)" VBox.vgrow="ALWAYS">
                            <xAxis>
-                              <NumberAxis label="Epoch" />
+                              <NumberAxis label="Epoch" prefHeight="55.0" prefWidth="506.0" />
                            </xAxis>
                            <yAxis>
-                              <NumberAxis label="Value" />
+                              <NumberAxis label="Value" prefHeight="137.0" prefWidth="49.0" />
                            </yAxis>
                         </LineChart>
-                        <Label style="-fx-font-weight: bold;" text="Laporan Evaluasi Model 📊" />
+                        <Label style="-fx-font-weight: bold;" text="Laporan Evaluasi Model" />
                         <GridPane hgap="10.0" vgap="5.0">
                            <columnConstraints>
                               <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="120.0" />
@@ -156,23 +146,23 @@
                      </children>
                   </VBox>
                   
-                  <VBox spacing="10.0">
+                  <VBox spacing="10.0" VBox.vgrow="ALWAYS">
                      <padding>
                         <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
                      </padding>
                      <children>
-                        <Label style="-fx-font-weight: bold;" text="Visualisasi &amp; Galeri 🖼️" />
+                        <Label style="-fx-font-weight: bold;" text="Visualisasi &amp; Galeri" />
                         <Label text="Confusion Matrix (Klik untuk zoom):" />
-                        <StackPane prefHeight="359.0" prefWidth="437.0" style="-fx-background-color: #f9f9f9; -fx-border-color: #eee;">
+                        <StackPane style="-fx-background-color: #f9f9f9; -fx-border-color: #eee;">
                            <children>
-                              <ImageView fx:id="imgConfusionMatrix" fitHeight="401.0" fitWidth="401.0" onMouseClicked="#handleZoomConfusionMatrix" pickOnBounds="true" preserveRatio="true" style="-fx-cursor: hand;" />
+                              <ImageView fx:id="imgConfusionMatrix" fitHeight="411.0" fitWidth="452.0" onMouseClicked="#handleZoomConfusionMatrix" pickOnBounds="true" preserveRatio="true" style="-fx-cursor: hand;" />
                            </children>
                            <padding>
                               <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
                            </padding>
                         </StackPane>
                         <Label style="-fx-font-weight: bold;" text="Galeri Prediksi (Klik untuk detail):" />
-                        <ListView fx:id="galleryListView" prefHeight="191.0" prefWidth="440.0" VBox.vgrow="ALWAYS" />
+                        <ListView fx:id="galleryListView" prefHeight="325.0" prefWidth="548.0" VBox.vgrow="ALWAYS" />
                      </children>
                   </VBox>
                </items>

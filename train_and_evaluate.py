@@ -12,7 +12,7 @@ import warnings
 import splitfolders # <-- Pastikan ini terinstall (pip install split-folders)
 
 from tensorflow.keras.applications import VGG16
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model, load_model # <-- load_model di-import
 from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.callbacks import Callback
@@ -54,24 +54,26 @@ def setup_arg_parser():
     parser.add_argument("--balance-data", action='store_true', help="Terapkan class weights untuk data imbalanced.")
     
     # --- Argumen Modul 2: Model & Training ---
+    # Argumen untuk model BARU (VGG16)
     parser.add_argument("--freeze-base", action='store_true', help="Bekukan (freeze) bobot pre-trained VGG16.")
     parser.add_argument("--dense-neurons", type=str, default="512", help="Jumlah neuron di layer Dense (pisahkan koma, e.g., '512,256')")
     parser.add_argument("--dropout-rate", type=float, default=0.5, help="Rate untuk layer Dropout (e.g., 0.5)")
-    parser.add_argument("--epochs", type=int, default=10, help="Jumlah epoch training.")
     
-    # --- Argumen Lain ---
+    # --- BARU: Argumen untuk MELANJUTKAN training ---
+    parser.add_argument("--load-model-path", type=str, default=None, help="Path ke model .h5 untuk melanjutkan training.")
+    
+    parser.add_argument("--epochs", type=int, default=10, help="Jumlah epoch training.")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="Ukuran batch.")
     
     return parser.parse_args()
 
 # ==========================================================
-# 3. FUNGSI PERSIAPAN DATA
+# 3. FUNGSI PERSIAPAN DATA (Tidak Berubah)
 # ==========================================================
 def prepare_data(args):
     print("--- 1. Mempersiapkan Data ---")
     img_size = DEFAULT_IMG_SIZE
     
-    # --- 1a. Membagi Folder ---
     temp_split_dir = os.path.join(args.output_dir, "temp_split_data")
     if os.path.exists(temp_split_dir):
         print(f"Menghapus folder split sementara sebelumnya di: {temp_split_dir}")
@@ -86,7 +88,7 @@ def prepare_data(args):
             args.input_dir,
             output=temp_split_dir,
             seed=1337,
-            ratio=tuple(ratios), # (train_ratio, val_ratio, test_ratio)
+            ratio=tuple(ratios),
             group_prefix=None
         )
         print("Pembagian data selesai.")
@@ -98,7 +100,6 @@ def prepare_data(args):
     val_dir = os.path.join(temp_split_dir, 'val')
     test_dir = os.path.join(temp_split_dir, 'test')
 
-    # --- 1b. Membuat Generator Data ---
     train_datagen = ImageDataGenerator(
         rescale=1./255,
         rotation_range=20,
@@ -138,10 +139,10 @@ def prepare_data(args):
     return train_generator, val_generator, test_generator, class_names
 
 # ==========================================================
-# 4. FUNGSI PEMBUATAN MODEL
+# 4. FUNGSI PEMBUATAN MODEL (MODIFIKASI: Compile dipindah)
 # ==========================================================
 def build_model(args, num_classes):
-    print("--- 2. Membangun Model VGG16 ---")
+    print("--- 2. Membangun Model VGG16 BARU ---")
     
     base_model = VGG16(weights='imagenet', include_top=False, input_shape=DEFAULT_IMG_SIZE + (3,))
 
@@ -172,28 +173,21 @@ def build_model(args, num_classes):
     predictions = Dense(num_classes, activation='softmax')(x)
     model = Model(inputs=base_model.input, outputs=predictions)
 
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
-        loss='categorical_crossentropy',
-        metrics=['accuracy']
-    )
+    # --- KOMPILASI DIPINDAH KE main() ---
     
-    print("Model berhasil dibangun dan dikompilasi.")
-    model.summary()
+    print("Model baru berhasil dibangun.")
     return model
 
 # ==========================================================
-# 5. FUNGSI EVALUASI & PENYIMPANAN HASIL
+# 5. FUNGSI EVALUASI & PENYIMPANAN HASIL (Tidak Berubah)
 # ==========================================================
 def evaluate_and_save_results(model, test_generator, class_names, output_dir):
     print("--- 4. Mengevaluasi Model dengan Test Set ---")
     
-    # Dapatkan prediksi
     y_prob = model.predict(test_generator, verbose=1)
     y_pred = np.argmax(y_prob, axis=1)
     y_true = test_generator.classes
-    # Dapatkan nama file
-    filenames = test_generator.filenames # e.g., ['Glaucoma/img1.png', 'Healthy/img2.png']
+    filenames = test_generator.filenames
 
     # --- 4a. Hitung Metrik ---
     print("--- 4a. Menghitung Metrik Final ---")
@@ -249,7 +243,7 @@ def evaluate_and_save_results(model, test_generator, class_names, output_dir):
     except Exception as e:
         print(f"Gagal menyimpan classification_report_test.txt: {e}")
         
-    # --- 4d. (BARU) Membuat & Menyimpan Daftar Prediksi (Galeri) ---
+    # --- 4d. Membuat & Menyimpan Daftar Prediksi (Galeri) ---
     print("--- 4d. Membuat Daftar Prediksi Detail (Galeri) ---")
     predictions_list = []
     
@@ -258,8 +252,8 @@ def evaluate_and_save_results(model, test_generator, class_names, output_dir):
 
     for i in range(len(filenames)):
         try:
-            file_path_relative = filenames[i] # 'Glaucoma/img1.png'
-            file_name_only = os.path.basename(file_path_relative) # 'img1.png'
+            file_path_relative = filenames[i]
+            file_name_only = os.path.basename(file_path_relative)
             
             actual_label = class_names[y_true[i]]
             predicted_label = class_names[y_pred[i]]
@@ -269,7 +263,7 @@ def evaluate_and_save_results(model, test_generator, class_names, output_dir):
             
             predictions_list.append({
                 "fileName": file_name_only,
-                "actualLabel": actual_label, # The class name, e.g., 'Glaucoma'
+                "actualLabel": actual_label,
                 "predictedLabel": predicted_label,
                 "confidence": confidence,
                 "allScores": all_scores
@@ -286,7 +280,7 @@ def evaluate_and_save_results(model, test_generator, class_names, output_dir):
         print(f"Gagal menyimpan predictions.json: {e}")
 
 # ==========================================================
-# 6. FUNGSI UTAMA (MAIN)
+# 6. FUNGSI UTAMA (MAIN) (MODIFIKASI BESAR)
 # ==========================================================
 def main():
     args = setup_arg_parser()
@@ -294,14 +288,41 @@ def main():
     
     # --- Tahap 1: Persiapan Data ---
     train_gen, val_gen, test_gen, class_names = prepare_data(args)
-    if train_gen is None: return
+    if train_gen is None:
+        return # Hentikan jika data gagal disiapkan
+        
     num_classes = len(class_names)
 
-    # --- Tahap 2: Bangun Model ---
-    model = build_model(args, num_classes)
+    # --- Tahap 2: Bangun atau Muat Model (LOGIKA BARU) ---
+    model = None
+    if args.load_model_path:
+        print(f"--- 2. Memuat model dari: {args.load_model_path} ---")
+        try:
+            model = load_model(args.load_model_path)
+            print("Model berhasil dimuat.")
+        except Exception as e:
+            print(f"ERROR: Gagal memuat model: {e}")
+            print("Pastikan file model tidak korup dan path sudah benar.")
+            return # Gagal
+    else:
+        # Jika tidak ada model yang diload, bangun model baru
+        model = build_model(args, num_classes)
+        if model is None:
+            return # Gagal
+
+    # --- Kompilasi Model (Dilakukan untuk keduanya) ---
+    print("MENGKOMPILASI MODEL...")
+    # Gunakan learning rate rendah, bagus untuk fine-tuning atau melanjutkan training
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001), 
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    model.summary()
     
     # --- Tahap 3: Training ---
     print("--- 3. Memulai Training ---")
+    
     class_weights = None
     if args.balance_data:
         try:
