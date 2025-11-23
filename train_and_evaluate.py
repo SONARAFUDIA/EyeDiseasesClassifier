@@ -2,7 +2,6 @@ import argparse
 import os
 import json
 import sys
-import shutil
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -11,280 +10,299 @@ import tensorflow as tf
 import warnings
 import splitfolders
 
+# Set backend dan konfigurasi
+import tensorflow.keras.backend as K
 from tensorflow.keras.applications import VGG16
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-# === IMPORT CALLBACKS ===
+from tensorflow.keras import optimizers
 from tensorflow.keras.callbacks import Callback, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
-from sklearn.utils.class_weight import compute_class_weight
 
-# --- Konfigurasi Awal ---
+# --- Konfigurasi Environment ---
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 warnings.filterwarnings('ignore')
-matplotlib.use('Agg')
+matplotlib.use('Agg') # Agar tidak muncul window pop-up
 
 DEFAULT_IMG_SIZE = (224, 224)
-DEFAULT_BATCH_SIZE = 32
+SEED = 42
+
+# Set seed
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
 
 # ==========================================================
-# 1. CALLBACK UNTUK MONITORING REAL-TIME (JAVA)
+# 1. DEFINISI FOCAL LOSS (Sesuai Notebook)
+# ==========================================================
+def focal_loss(gamma=2., alpha=.25):
+    def focal_loss_fixed(y_true, y_pred):
+        y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
+        cross_entropy = -y_true * K.log(y_pred)
+        weight = alpha * K.pow(1 - y_pred, gamma)
+        loss = K.sum(weight * cross_entropy, axis=1)
+        return K.mean(loss)
+    return focal_loss_fixed
+
+# ==========================================================
+# 2. CALLBACK LOGGER KE JAVA
 # ==========================================================
 class RealtimeLoggerCallback(Callback):
     def on_epoch_end(self, epoch, logs=None):
         if logs:
+            # Format JSON standar yang dibaca Java
             log_data = {
-                "epoch": epoch,
-                "val_loss": logs.get('val_loss'),
-                "val_accuracy": logs.get('val_accuracy')
+                "epoch": epoch + 1, 
+                "val_loss": float(logs.get('val_loss', 0.0)),
+                "val_accuracy": float(logs.get('val_accuracy', 0.0)),
+                "loss": float(logs.get('loss', 0.0)),
+                "accuracy": float(logs.get('accuracy', 0.0))
             }
             print(json.dumps(log_data))
             sys.stdout.flush()
 
 # ==========================================================
-# 2. FUNGSI ARGUMENT PARSER
+# 3. ARGUMENT PARSER
 # ==========================================================
 def setup_arg_parser():
-    parser = argparse.ArgumentParser(description="Backend Training & Evaluasi")
+    parser = argparse.ArgumentParser()
+    
+    # Argumen Wajib dari Java
     parser.add_argument("--input-dir", type=str, required=True)
     parser.add_argument("--output-dir", type=str, required=True)
-    parser.add_argument("--split-ratio", type=str, default="70,15,15")
-    parser.add_argument("--balance-data", action='store_true')
-    parser.add_argument("--freeze-base", action='store_true')
+    
+    # Argumen Opsional (Hyperparameters User)
+    parser.add_argument("--split-ratio", type=str, default="80,10,10")
     parser.add_argument("--dense-neurons", type=str, default="512")
     parser.add_argument("--dropout-rate", type=float, default=0.5)
-    parser.add_argument("--load-model-path", type=str, default=None)
-    parser.add_argument("--epochs", type=int, default=25)
-    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--batch-size", type=int, default=32)
+    
+    # Argumen Load Model (Fitur Lanjut Training)
+    parser.add_argument("--load-model-path", type=str, default=None, help="Path file .h5 untuk continue training")
+
+    # Argumen Legacy (Diterima biar Java tidak error, tapi logic di-override)
+    parser.add_argument("--freeze-base", action='store_true') 
+    parser.add_argument("--balance-data", action='store_true') 
+
     return parser.parse_args()
 
 # ==========================================================
-# 3. FUNGSI PERSIAPAN DATA
+# 4. PREPARE DATA
 # ==========================================================
 def prepare_data(args):
-    print("--- 1. Mempersiapkan Data ---")
-    img_size = DEFAULT_IMG_SIZE
+    print("--- Mempersiapkan Data ---")
+    split_dir = os.path.join(args.output_dir, "split_data")
     
-    temp_split_dir = os.path.join(args.output_dir, "temp_split_data")
-    
-    # Hapus temp dir lama jika ada agar bersih
-    if os.path.exists(temp_split_dir):
+    if not os.path.exists(split_dir) or not os.listdir(split_dir):
+        print(f"Melakukan split data dari: {args.input_dir}")
         try:
-            shutil.rmtree(temp_split_dir)
-        except:
-            pass
-        
-    try:
-        ratios = [int(r) / 100.0 for r in args.split_ratio.split(',')]
-        print(f"Membagi data ke {temp_split_dir}...")
-        splitfolders.ratio(
-            args.input_dir, output=temp_split_dir, seed=1337,
-            ratio=tuple(ratios), group_prefix=None
-        )
-    except Exception as e:
-        print(f"ERROR Splitfolders: {e}")
-        return None, None, None, None
+            ratios = args.split_ratio.split(',')
+            if len(ratios) == 3:
+                r = [float(i)/100.0 if float(i) > 1.0 else float(i) for i in ratios]
+                total = sum(r)
+                r = (r[0]/total, r[1]/total, r[2]/total)
+            else:
+                r = (0.8, 0.1, 0.1)
 
-    train_dir = os.path.join(temp_split_dir, 'train')
-    val_dir = os.path.join(temp_split_dir, 'val')
-    test_dir = os.path.join(temp_split_dir, 'test')
-
-    train_datagen = ImageDataGenerator(
-        rescale=1./255,
-        rotation_range=20,
-        width_shift_range=0.1,
-        height_shift_range=0.1,
-        shear_range=0.1,
-        zoom_range=0.1,
-        horizontal_flip=True,
-        fill_mode='nearest'
-    )
-    val_test_datagen = ImageDataGenerator(rescale=1./255)
-
-    train_generator = train_datagen.flow_from_directory(
-        train_dir, target_size=img_size, batch_size=args.batch_size, class_mode='categorical'
-    )
-    val_generator = val_test_datagen.flow_from_directory(
-        val_dir, target_size=img_size, batch_size=args.batch_size, class_mode='categorical', shuffle=False
-    )
-    test_generator = val_test_datagen.flow_from_directory(
-        test_dir, target_size=img_size, batch_size=args.batch_size, class_mode='categorical', shuffle=False
-    )
+            splitfolders.ratio(args.input_dir, output=split_dir, seed=SEED, ratio=r, group_prefix=None, move=False)
+        except Exception as e:
+            print(f"Gagal split data: {e}")
+            sys.exit(1)
     
-    return train_generator, val_generator, test_generator, list(train_generator.class_indices.keys())
+    return split_dir
 
 # ==========================================================
-# 4. FUNGSI BANGUN MODEL BARU
+# 5. BUILD MODEL (STRATEGI NOTEBOOK)
 # ==========================================================
-def build_new_model(args, num_classes):
-    # === LOG KHUSUS MODEL BARU ===
-    print("\n" + "="*50)
-    print("   MODE: MEMBUAT MODEL BARU (NEW TRAINING)")
-    print(f"   Base Model   : VGG16 (ImageNet)")
-    print(f"   Freeze Base  : {args.freeze_base}")
-    print(f"   Dense Neurons: {args.dense_neurons}")
-    print(f"   Dropout Rate : {args.dropout_rate}")
-    print("="*50 + "\n")
+def build_or_load_model(num_classes, args):
+    # KASUS A: Continue Training (User load model .h5)
+    if args.load_model_path and os.path.exists(args.load_model_path):
+        print(f"--- Memuat Model Lama: {args.load_model_path} ---")
+        try:
+            # Load model dengan custom object Focal Loss
+            model = load_model(args.load_model_path, custom_objects={'focal_loss_fixed': focal_loss()})
+            print("Model berhasil dimuat.")
+        except Exception as e:
+            print(f"Gagal memuat model (mencoba tanpa focal loss): {e}")
+            model = load_model(args.load_model_path) # Fallback
+
+        # PENTING: Compile ulang dengan strategi Notebook (LR Kecil + Focal Loss)
+        # Ini memastikan model lama 'beradaptasi' dengan teknik training baru
+        print("Re-compiling model dengan strategi Notebook (Adam 1e-5, Focal Loss)...")
+        model.compile(
+            optimizer=optimizers.Adam(learning_rate=1e-5), 
+            loss=focal_loss(), 
+            metrics=['accuracy']
+        )
+        return model
+
+    # KASUS B: Training Baru (VGG16 ImageNet)
+    print("--- Membangun Model VGG16 Baru ---")
     
     base_model = VGG16(weights='imagenet', include_top=False, input_shape=DEFAULT_IMG_SIZE + (3,))
-    base_model.trainable = not args.freeze_base
-
+    
+    # Strategi Unfreeze: Block 5 & 4
+    base_model.trainable = True
+    set_trainable = False
+    for layer in base_model.layers:
+        if layer.name.startswith('block5_conv1') or layer.name.startswith('block4_conv1'):
+            set_trainable = True
+        layer.trainable = set_trainable
+            
+    # Custom Head
     x = base_model.output
     x = GlobalAveragePooling2D()(x)
     
-    try:
-        for neurons in [int(n) for n in args.dense_neurons.split(',') if n.strip()]:
-            x = Dense(neurons, activation='relu')(x)
-    except:
-        x = Dense(512, activation='relu')(x)
-
-    x = Dropout(args.dropout_rate)(x)
-    predictions = Dense(num_classes, activation='softmax')(x)
+    neurons_list = [int(n) for n in args.dense_neurons.split(',') if n.strip().isdigit()]
+    if not neurons_list: neurons_list = [512]
     
-    return Model(inputs=base_model.input, outputs=predictions)
+    for neurons in neurons_list:
+        x = Dense(neurons, activation='relu')(x)
+        if args.dropout_rate > 0:
+            x = Dropout(args.dropout_rate)(x)
+            
+    predictions = Dense(num_classes, activation='softmax')(x)
+    model = Model(inputs=base_model.input, outputs=predictions)
+    
+    model.compile(
+        optimizer=optimizers.Adam(learning_rate=1e-4), 
+        loss=focal_loss(), 
+        metrics=['accuracy']
+    )
+    
+    return model
 
 # ==========================================================
-# 5. MAIN FUNCTION
+# 6. MAIN PROCESS
 # ==========================================================
 def main():
-    # Fix Encoding Windows agar tidak crash saat print karakter aneh
     if sys.stdout.encoding != 'utf-8':
-        sys.stdout.reconfigure(encoding='utf-8')
-
-    args = setup_arg_parser()
-    os.makedirs(args.output_dir, exist_ok=True)
-    
-    # 1. Data
-    train_gen, val_gen, test_gen, class_names = prepare_data(args)
-    if not train_gen: return
-
-    # 2. Model Strategy (Load vs New)
-    if args.load_model_path:
-        # === LOG KHUSUS LANJUT TRAINING ===
-        print("\n" + "="*50)
-        print("   MODE: MELANJUTKAN TRAINING (CONTINUE)")
-        print(f"   Load File    : {os.path.basename(args.load_model_path)}")
-        print("="*50 + "\n")
-        
-        try:
-            model = load_model(args.load_model_path)
-            print("Model berhasil dimuat dari disk.")
-        except Exception as e:
-            print(f"ERROR CRITICAL: Gagal memuat model: {e}")
-            return
-    else:
-        # Buat Model Baru
-        model = build_new_model(args, len(class_names))
-
-    # Kompilasi Ulang (Penting untuk reset optimizer state agar fresh)
-    print("MENGKOMPILASI MODEL (Adam, lr=0.0001)...")
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001), 
-        loss='categorical_crossentropy', metrics=['accuracy']
-    )
-
-    # 3. Training dengan Callbacks Cerdas
-    print("--- 3. Memulai Training ---")
-    
-    best_model_path = os.path.join(args.output_dir, "best_model.h5")
-    
-    callbacks = [
-        RealtimeLoggerCallback(), # Wajib untuk grafik Java
-        
-        # Simpan hanya yang terbaik
-        ModelCheckpoint(best_model_path, monitor='val_accuracy', save_best_only=True, mode='max', verbose=1),
-        
-        # Turunkan LR jika stuck (Kunci agar akurasi naik tinggi)
-        ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=1e-6, verbose=1),
-        
-        # Berhenti jika tidak ada harapan
-        EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True, verbose=1)
-    ]
-
-    class_weights = None
-    if args.balance_data:
-        try:
-            weights = compute_class_weight('balanced', classes=np.unique(train_gen.classes), y=train_gen.classes)
-            class_weights = dict(enumerate(weights))
-            print("INFO: Class Weights diaktifkan untuk menyeimbangkan data.")
+        try: sys.stdout.reconfigure(encoding='utf-8')
         except: pass
 
-    model.fit(
-        train_gen, epochs=args.epochs, validation_data=val_gen,
-        callbacks=callbacks, class_weight=class_weights, verbose=2
+    args = setup_arg_parser()
+    if not os.path.exists(args.output_dir): os.makedirs(args.output_dir)
+
+    # 1. Siapkan Data
+    data_dir = prepare_data(args)
+    train_dir = os.path.join(data_dir, "train")
+    val_dir = os.path.join(data_dir, "val")
+    test_dir = os.path.join(data_dir, "test")
+
+    # 2. Augmentasi Data (Sesuai Notebook)
+    print("--- Menyiapkan Augmentasi Data ---")
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        rotation_range=20,      
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True,
+        fill_mode='nearest'
+    )
+    test_datagen = ImageDataGenerator(rescale=1./255)
+
+    train_gen = train_datagen.flow_from_directory(
+        train_dir, target_size=DEFAULT_IMG_SIZE, batch_size=args.batch_size, class_mode='categorical'
+    )
+    val_gen = test_datagen.flow_from_directory(
+        val_dir, target_size=DEFAULT_IMG_SIZE, batch_size=args.batch_size, class_mode='categorical', shuffle=False
     )
 
-    # 4. Evaluasi (Gunakan Model Terbaik yang disimpan Checkpoint)
-    print(f"Memuat model terbaik dari {best_model_path} untuk evaluasi final...")
+    # 3. Class Weights
+    class_weights = None
     try:
-        final_model = load_model(best_model_path)
-    except:
-        print("Gagal memuat best model, menggunakan model terakhir.")
-        final_model = model
-
-    print("--- 4. Evaluasi Final ---")
-    y_prob = final_model.predict(test_gen, verbose=1)
-    y_pred = np.argmax(y_prob, axis=1)
-    y_true = test_gen.classes
-
-    # Simpan Metrik
-    metrics = {
-        "accuracy": accuracy_score(y_true, y_pred),
-        "precision_macro": precision_score(y_true, y_pred, average='macro', zero_division=0),
-        "recall_macro": recall_score(y_true, y_pred, average='macro', zero_division=0),
-        "f1_macro": f1_score(y_true, y_pred, average='macro', zero_division=0)
-    }
-    with open(os.path.join(args.output_dir, "final_metrics.json"), 'w') as f:
-        json.dump(metrics, f)
-
-    # Simpan Report Teks
-    report_text = classification_report(y_true, y_pred, target_names=class_names, zero_division=0)
-    print("\n" + report_text) # Print juga ke log agar user lihat
-    with open(os.path.join(args.output_dir, "classification_report_test.txt"), 'w') as f:
-        f.write(report_text)
-
-    # Simpan Confusion Matrix
-    try:
-        cm = confusion_matrix(y_true, y_pred)
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
-        plt.tight_layout()
-        plt.savefig(os.path.join(args.output_dir, "confusion_matrix_test.png"))
-        plt.close()
-    except Exception as e:
-        print(f"Warning: Gagal membuat gambar confusion matrix: {e}")
-
-    # Simpan Prediksi untuk Galeri
-    preds = []
-    filenames = test_gen.filenames
-    for i in range(len(filenames)):
-        # Ambil top 3 skor biar file tidak terlalu besar
-        scores = {class_names[j]: float(y_prob[i][j] * 100) for j in range(len(class_names))}
-        
-        preds.append({
-            "fileName": os.path.basename(filenames[i]),
-            "actualLabel": class_names[y_true[i]],
-            "predictedLabel": class_names[y_pred[i]],
-            "confidence": float(np.max(y_prob[i]) * 100),
-            "allScores": scores
-        })
-    with open(os.path.join(args.output_dir, "predictions.json"), 'w') as f:
-        json.dump(preds, f)
-
-    # Rename model akhir untuk konsistensi
-    final_save_path = os.path.join(args.output_dir, "trained_model.h5")
-    try:
-        shutil.move(best_model_path, final_save_path)
-        print(f"Model final disimpan di: {final_save_path}")
-    except:
-        pass
-    
-    # Bersihkan folder temp
-    try: shutil.rmtree(temp_split_dir) 
+        from sklearn.utils import class_weight
+        labels = train_gen.classes
+        unique_cls = np.unique(labels)
+        cw = class_weight.compute_class_weight('balanced', classes=unique_cls, y=labels)
+        class_weights = dict(enumerate(cw))
+        print(f"Class Weights diaktifkan: {class_weights}")
     except: pass
+
+    # 4. Build / Load Model
+    num_classes = len(train_gen.class_indices)
+    model = build_or_load_model(num_classes, args)
+
+    # 5. Callbacks
+    best_model_path = os.path.join(args.output_dir, "best_model.h5")
+    callbacks = [
+        RealtimeLoggerCallback(), 
+        ModelCheckpoint(best_model_path, monitor='val_loss', save_best_only=True, verbose=0),
+        EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True, verbose=0),
+        ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=1e-7, verbose=0)
+    ]
+
+    # 6. Training
+    print(f"--- Mulai Training ({args.epochs} Epochs) ---")
+    try:
+        model.fit(
+            train_gen,
+            epochs=args.epochs,
+            validation_data=val_gen,
+            class_weight=class_weights,
+            callbacks=callbacks,
+            verbose=0 
+        )
+    except Exception as e:
+        print(f"CRITICAL ERROR saat Training: {e}")
+        sys.exit(1)
+
+    # 7. Evaluasi & Simpan Hasil
+    print("--- Evaluasi Model ---")
+    test_gen = test_datagen.flow_from_directory(
+        test_dir, target_size=DEFAULT_IMG_SIZE, batch_size=args.batch_size, class_mode='categorical', shuffle=False
+    )
     
-    print("\n--- Proses Selesai ---")
+    try:
+        model = load_model(best_model_path, custom_objects={'focal_loss_fixed': focal_loss()})
+    except: pass
+
+    y_true = test_gen.classes
+    y_pred_probs = model.predict(test_gen)
+    y_pred = np.argmax(y_pred_probs, axis=1)
+    
+    # Save Metrics JSON
+    metrics_data = {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "precision_macro": precision_score(y_true, y_pred, average='weighted', zero_division=0),
+        "recall_macro": recall_score(y_true, y_pred, average='weighted', zero_division=0),
+        "f1_macro": f1_score(y_true, y_pred, average='weighted', zero_division=0)
+    }
+    with open(os.path.join(args.output_dir, "final_metrics.json"), "w") as f:
+        json.dump(metrics_data, f)
+        
+    # Save Report & Plot
+    with open(os.path.join(args.output_dir, "classification_report_test.txt"), "w") as f:
+        f.write(classification_report(y_true, y_pred, target_names=list(test_gen.class_indices.keys())))
+        
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(8,6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=test_gen.class_indices.keys(), yticklabels=test_gen.class_indices.keys())
+    plt.title('Confusion Matrix (Test Set)')
+    plt.tight_layout()
+    plt.savefig(os.path.join(args.output_dir, "confusion_matrix_test.png"))
+    
+    # Save Sample Predictions for Gallery
+    predictions_list = []
+    filenames = test_gen.filenames
+    labels_map = {v: k for k, v in test_gen.class_indices.items()}
+    limit = min(len(filenames), 50)
+    for i in range(limit):
+        fname = os.path.basename(filenames[i])
+        act = labels_map[y_true[i]]
+        pred = labels_map[y_pred[i]]
+        all_scores = {labels_map[idx]: float(prob) * 100 for idx, prob in enumerate(y_pred_probs[i])}
+        predictions_list.append({
+            "fileName": fname, "actualLabel": act, "predictedLabel": pred, "confidence": float(np.max(y_pred_probs[i])), "allScores": all_scores
+        })
+        
+    with open(os.path.join(args.output_dir, "predictions.json"), "w") as f:
+        json.dump(predictions_list, f)
+
+    print("--- Proses Selesai ---")
 
 if __name__ == "__main__":
     main()
