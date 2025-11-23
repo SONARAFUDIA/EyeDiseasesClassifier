@@ -1,4 +1,4 @@
-package eyepred.eyediseasesclassifier; // Ganti dengan package Anda
+package eyepred.eyediseasesclassifier;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,21 +8,21 @@ import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
-import javafx.scene.Scene; // Import BARU
+import javafx.scene.Scene;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.XYChart;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
-import javafx.scene.input.MouseEvent; // Import BARU
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.StackPane; // Import BARU
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.DirectoryChooser;
-import javafx.stage.FileChooser; // Import BARU
-import javafx.stage.Modality; // Import BARU
-import javafx.stage.Stage; // Import BARU
+import javafx.stage.FileChooser;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -34,8 +34,11 @@ import java.util.Map;
 
 public class MainController {
 
-    // === Path ke Skrip Python (GANTI INI) ===
-    private static final String PYTHON_EXECUTABLE = "C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python313\\python.exe";
+    // === Path ke Skrip Python ===
+    // Pastikan path ini benar di komputer kamu!
+    private static final String PYTHON_EXECUTABLE = "C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"; 
+    
+    // Arahkan ke script train_and_evaluate.py yang SUDAH kamu update di repo
     private static final String PYTHON_SCRIPT_PATH = "C:\\Users\\LENOVO\\Documents\\NetBeansProjects\\EyeDiseasesClassifier\\train_and_evaluate.py";
 
     // === Injeksi FXML (Panel Kontrol) ===
@@ -52,13 +55,13 @@ public class MainController {
     @FXML private Button btnOutputDir;
     @FXML private Label lblOutputPath;
     @FXML private Button btnStartTraining;
-    @FXML private Button btnBatal; // <-- BARU
+    @FXML private Button btnBatal;
 
-    // === BARU: Injeksi FXML untuk Lanjutkan Training ===
+    // === Injeksi FXML (Load Model) ===
     @FXML private Button btnLoadModel;
     @FXML private Button btnClearModel;
     @FXML private Label lblLoadModelPath;
-    @FXML private VBox vboxVggConfig; // <-- VBox yang membungkus konfigurasi VGG16
+    @FXML private VBox vboxVggConfig;
 
     // === Injeksi FXML (Panel Output) ===
     @FXML private LineChart<Number, Number> chartTraining;
@@ -70,27 +73,25 @@ public class MainController {
     @FXML private TextArea txtClassificationReport;
     @FXML private TextArea txtLog;
 
-    // === Injeksi FXML (Galeri) ===
+    // === Injeksi FXML (Galeri & Loading) ===
     @FXML private ListView<GalleryItem> galleryListView;
-
-    // === Injeksi FXML (Loading) ===
     @FXML private VBox loadingPane;
     @FXML private Label lblLoadingStatus;
     @FXML private ProgressBar progressBar;
-    
+
     // === Variabel Internal ===
     private File inputDir;
     private File outputDir;
-    private File loadModelFile = null; // <-- BARU: Untuk menyimpan model yang akan diload
+    private File loadModelFile = null; // Menyimpan path model untuk dilanjutkan
     private final ObjectMapper objectMapper = new ObjectMapper();
     private XYChart.Series<Number, Number> accuracySeries;
     private XYChart.Series<Number, Number> lossSeries;
 
-    // === Variabel untuk Task & Process Control ===
+    // === Variabel Task ===
     private Task<Boolean> runningTask;
     private Process runningPythonProcess;
 
-    // === Model data untuk galeri ===
+    // === Model Galeri ===
     public static class GalleryItem {
         public String fileName;
         public String actualLabel;
@@ -102,7 +103,6 @@ public class MainController {
 
     @FXML
     public void initialize() {
-        // Setup Grafik
         accuracySeries = new XYChart.Series<>();
         accuracySeries.setName("Validation Accuracy");
         lossSeries = new XYChart.Series<>();
@@ -110,551 +110,295 @@ public class MainController {
         chartTraining.getData().addAll(accuracySeries, lossSeries);
 
         loadingPane.setVisible(false);
-        
-        // Atur kondisi awal tombol
         btnBatal.setDisable(true);
-        handleClearLoadModel(); // Atur state awal untuk panel config VGG16
-
-        // Setup fungsionalitas galeri
+        
+        handleClearLoadModel(); // Set state awal (Mode Train Baru)
+        
         setupGalleryCellFactory();
         setupGalleryClickListener();
     }
 
     @FXML
     private void handleInputDataset() {
-        DirectoryChooser dirChooser = new DirectoryChooser();
-        dirChooser.setTitle("Pilih Folder Dataset Input");
-        File dir = dirChooser.showDialog(btnInputDataset.getScene().getWindow());
-        if (dir != null) {
-            inputDir = dir;
-            lblInputPath.setText(inputDir.getAbsolutePath());
+        DirectoryChooser dc = new DirectoryChooser();
+        dc.setTitle("Pilih Folder Dataset");
+        File f = dc.showDialog(btnInputDataset.getScene().getWindow());
+        if (f != null) {
+            inputDir = f;
+            lblInputPath.setText(f.getAbsolutePath());
+            loadStaticConfusionMatrix(inputDir); // Load gambar statis jika ada
+        }
+    }
+
+    private void loadStaticConfusionMatrix(File directory) {
+        File cmFile = new File(directory, "confusion_matrix.png");
+        if (cmFile.exists()) {
+            try {
+                imgConfusionMatrix.setImage(new Image(new FileInputStream(cmFile)));
+            } catch (Exception e) { e.printStackTrace(); }
         }
     }
 
     @FXML
     private void handleOutputFolder() {
-        DirectoryChooser dirChooser = new DirectoryChooser();
-        dirChooser.setTitle("Pilih Folder Output Hasil");
-        File dir = dirChooser.showDialog(btnOutputDir.getScene().getWindow());
-        if (dir != null) {
-            outputDir = dir;
-            lblOutputPath.setText(outputDir.getAbsolutePath());
-        }
+        DirectoryChooser dc = new DirectoryChooser();
+        dc.setTitle("Pilih Folder Output");
+        File f = dc.showDialog(btnOutputDir.getScene().getWindow());
+        if (f != null) { outputDir = f; lblOutputPath.setText(f.getAbsolutePath()); }
     }
-    
-    // === HANDLER BARU: Pilih Model untuk Dilanjutkan ===
+
     @FXML
     private void handleLoadModel() {
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Pilih File Model (.h5) untuk Dilanjutkan");
-        fileChooser.getExtensionFilters().add(
-                new FileChooser.ExtensionFilter("Model Keras", "*.h5")
-        );
-        File selectedFile = fileChooser.showOpenDialog(btnLoadModel.getScene().getWindow());
-        if (selectedFile != null && selectedFile.exists()) {
-            loadModelFile = selectedFile;
-            lblLoadModelPath.setText("Lanjut dari: " + selectedFile.getName());
-            vboxVggConfig.setDisable(true); // Nonaktifkan config VGG16
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Pilih Model .h5");
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Model Keras", "*.h5"));
+        File f = fc.showOpenDialog(btnLoadModel.getScene().getWindow());
+        if (f != null) {
+            loadModelFile = f;
+            lblLoadModelPath.setText("Lanjut dari: " + f.getName());
+            vboxVggConfig.setDisable(true); // Nonaktifkan config VGG karena pakai model lama
         }
     }
 
-    // === HANDLER BARU: Bersihkan Pilihan Model ===
     @FXML
     private void handleClearLoadModel() {
         loadModelFile = null;
-        lblLoadModelPath.setText("Akan train dari awal (VGG16)");
-        vboxVggConfig.setDisable(false); // Aktifkan kembali config VGG16
+        lblLoadModelPath.setText("Train dari awal (VGG16)");
+        vboxVggConfig.setDisable(false); // Aktifkan config VGG untuk training baru
     }
-
 
     @FXML
     private void handleStartTraining() {
-        // 1. Validasi Input
         if (inputDir == null || outputDir == null) {
-            showAlert(Alert.AlertType.ERROR, "Error", "Folder Input dan Output tidak boleh kosong.");
+            showAlert(Alert.AlertType.ERROR, "Error", "Pilih folder input & output!");
             return;
         }
-        int trainSplit, valSplit, testSplit, epochs;
-        float dropout;
+        
         try {
-            trainSplit = Integer.parseInt(txtSplitTrain.getText());
-            valSplit = Integer.parseInt(txtSplitVal.getText());
-            testSplit = Integer.parseInt(txtSplitTest.getText());
-            if (trainSplit + valSplit + testSplit != 100) {
-                showAlert(Alert.AlertType.ERROR, "Error", "Total split ratio (Train + Val + Test) harus 100.");
-                return;
-            }
-            epochs = Integer.parseInt(txtEpochs.getText());
-            // Dropout hanya dibaca jika kita tidak me-load model
-            dropout = (loadModelFile == null) ? Float.parseFloat(txtDropoutRate.getText()) : 0.0f;
-        } catch (NumberFormatException e) {
-            showAlert(Alert.AlertType.ERROR, "Error", "Input Epoch, Split, dan Dropout harus berupa angka valid.");
+            Integer.parseInt(txtEpochs.getText());
+        } catch (Exception e) {
+            showAlert(Alert.AlertType.ERROR, "Error", "Epoch harus angka!");
             return;
         }
 
-        // 2. Bersihkan UI
-        clearResultsUI();
-
-        // 3. Buat Perintah Python
-        List<String> command = buildPythonCommand(trainSplit, valSplit, testSplit, epochs, dropout);
-
-        // 4. Buat Task Background
-        Task<Boolean> trainingTask = createTrainingTask(command);
-
-        // 5. Ikat UI ke Task
-        lblLoadingStatus.textProperty().bind(trainingTask.messageProperty());
-        progressBar.progressProperty().bind(trainingTask.progressProperty());
-
-        trainingTask.setOnRunning(e -> {
-            loadingPane.setVisible(true);
-            btnStartTraining.setDisable(true);
-            btnBatal.setDisable(false); // <-- Aktifkan tombol Batal
-        });
-
-        trainingTask.setOnSucceeded(e -> {
-            loadingPane.setVisible(false);
-            btnStartTraining.setDisable(false);
-            btnBatal.setDisable(true); // <-- Nonaktifkan tombol Batal
-            
-            if (trainingTask.getValue()) {
-                showAlert(Alert.AlertType.INFORMATION, "Sukses", "Training dan evaluasi selesai. Memuat hasil...");
-                loadResults();
-            } else {
-                if (!trainingTask.isCancelled()) {
-                     showAlert(Alert.AlertType.ERROR, "Gagal", "Proses Python gagal. Periksa log di bagian atas.");
-                }
-            }
-            runningTask = null;
-            runningPythonProcess = null;
-        });
-
-        trainingTask.setOnFailed(e -> {
-            loadingPane.setVisible(false);
-            btnStartTraining.setDisable(false);
-            btnBatal.setDisable(true); // <-- Nonaktifkan tombol Batal
-            
-            if (!trainingTask.isCancelled()) {
-                showAlert(Alert.AlertType.ERROR, "Error Kritis", "Gagal menjalankan task: " + trainingTask.getException().getMessage());
-                trainingTask.getException().printStackTrace();
-            }
-            runningTask = null;
-            runningPythonProcess = null;
-        });
-
-        trainingTask.setOnCancelled(e -> {
-            loadingPane.setVisible(false);
-            btnStartTraining.setDisable(false);
-            btnBatal.setDisable(true); // <-- Nonaktifkan tombol Batal
-            
-            txtLog.appendText("\n--- PROSES DIBATALKAN OLEH PENGGUNA ---\n");
-            showAlert(Alert.AlertType.WARNING, "Dibatalkan", "Proses training telah dibatalkan.");
-            
-            runningTask = null;
-            runningPythonProcess = null;
-        });
-
-        // 6. Simpan referensi dan Jalankan Task
-        this.runningTask = trainingTask;
-        new Thread(this.runningTask).start();
-    }
-    
-    /**
-     * Handler untuk tombol Batal
-     */
-    @FXML
-    private void handleBatal() {
-        txtLog.appendText("\n--- MEMBATALKAN PROSES... ---\n");
+        // 1. Bersihkan UI (TAPI JANGAN HAPUS PILIHAN MODEL!)
+        clearResultsUI(); 
         
-        if (this.runningPythonProcess != null) {
-            this.runningPythonProcess.destroyForcibly(); 
-        }
+        // 2. Susun Perintah Python
+        List<String> cmd = new ArrayList<>();
+        cmd.add(PYTHON_EXECUTABLE);
+        cmd.add(PYTHON_SCRIPT_PATH);
+        cmd.add("--input-dir"); cmd.add(inputDir.getAbsolutePath());
+        cmd.add("--output-dir"); cmd.add(outputDir.getAbsolutePath());
+        cmd.add("--epochs"); cmd.add(txtEpochs.getText());
+        cmd.add("--split-ratio"); cmd.add(txtSplitTrain.getText()+","+txtSplitVal.getText()+","+txtSplitTest.getText());
         
-        if (this.runningTask != null) {
-            this.runningTask.cancel(true);
-        }
-    }
-    
-    /**
-     * Handler untuk Zoom Confusion Matrix
-     */
-    @FXML
-    private void handleZoomConfusionMatrix(MouseEvent event) {
-        if (imgConfusionMatrix.getImage() == null) {
-            return;
-        }
-
-        ImageView zoomView = new ImageView(imgConfusionMatrix.getImage());
-        zoomView.setPreserveRatio(true);
-
-        ScrollPane scrollPane = new ScrollPane(zoomView);
-        scrollPane.setPannable(true);
-        scrollPane.setStyle("-fx-background: #333;");
-
-        StackPane zoomLayout = new StackPane(scrollPane);
-        zoomLayout.setStyle("-fx-background-color: #333;");
-        
-        double width = Math.min(800, imgConfusionMatrix.getImage().getWidth() + 40);
-        double height = Math.min(700, imgConfusionMatrix.getImage().getHeight() + 40);
-
-        Scene zoomScene = new Scene(zoomLayout, width, height);
-
-        Stage zoomStage = new Stage();
-        zoomStage.setTitle("Confusion Matrix - Zoom");
-        zoomStage.initModality(Modality.APPLICATION_MODAL);
-        zoomStage.initOwner(btnStartTraining.getScene().getWindow());
-        zoomStage.setScene(zoomScene);
-        zoomStage.showAndWait();
-    }
-
-
-    private List<String> buildPythonCommand(int train, int val, int test, int epochs, float dropout) {
-        List<String> command = new ArrayList<>();
-        command.add(PYTHON_EXECUTABLE);
-        command.add(PYTHON_SCRIPT_PATH);
-        
-        // Argumen yang selalu ada
-        command.add("--input-dir");
-        command.add(inputDir.getAbsolutePath());
-        command.add("--output-dir");
-        command.add(outputDir.getAbsolutePath());
-        command.add("--split-ratio");
-        command.add(String.format("%d,%d,%d", train, val, test));
-        command.add("--epochs");
-        command.add(String.valueOf(epochs));
-        
-        if (chkBalanceData.isSelected()) {
-            command.add("--balance-data");
-        }
-        
-        // Argumen Kondisional (BARU)
+        // Cek apakah user memilih file model untuk dilanjutkan
         if (loadModelFile != null) {
-            // Jika melanjutkan training
-            command.add("--load-model-path");
-            command.add(loadModelFile.getAbsolutePath());
+            cmd.add("--load-model-path"); 
+            cmd.add(loadModelFile.getAbsolutePath());
+            System.out.println("INFO: Mode Lanjutkan Training.");
         } else {
-            // Jika training dari awal (VGG16)
-            command.add("--dropout-rate");
-            command.add(String.valueOf(dropout));
-            
-            String denseNeurons = txtDenseNeurons.getText().trim();
-            if (!denseNeurons.isEmpty()) {
-                 command.add("--dense-neurons");
-                 command.add(denseNeurons);
+            // Jika training baru, kirim parameter VGG16
+            if (!txtDenseNeurons.getText().isEmpty()) { 
+                cmd.add("--dense-neurons"); 
+                cmd.add(txtDenseNeurons.getText()); 
             }
-            if (chkFreezeBase.isSelected()) {
-                command.add("--freeze-base");
-            }
+            cmd.add("--dropout-rate"); cmd.add(txtDropoutRate.getText());
+            if (chkFreezeBase.isSelected()) cmd.add("--freeze-base");
+            System.out.println("INFO: Mode Training Baru.");
         }
         
-        System.out.println("Executing command: " + String.join(" ", command));
-        return command;
-    }
+        if (chkBalanceData.isSelected()) cmd.add("--balance-data");
 
-    private Task<Boolean> createTrainingTask(List<String> command) {
-        return new Task<>() {
-            @Override
-            protected Boolean call() throws Exception {
-                int totalEpochs = 1;
-                for(int i=0; i < command.size(); i++) {
-                    if(command.get(i).equals("--epochs") && i+1 < command.size()) {
-                        totalEpochs = Integer.parseInt(command.get(i+1));
-                        break;
-                    }
-                }
-                
-                ProcessBuilder processBuilder = new ProcessBuilder(command);
-                processBuilder.redirectErrorStream(true);
-                
-                runningPythonProcess = processBuilder.start(); 
+        System.out.println("CMD: " + String.join(" ", cmd));
 
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(runningPythonProcess.getInputStream()))) {
+        // 3. Jalankan Task Background
+        Task<Boolean> task = new Task<>() {
+            @Override protected Boolean call() throws Exception {
+                ProcessBuilder pb = new ProcessBuilder(cmd);
+                pb.redirectErrorStream(true);
+                runningPythonProcess = pb.start();
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(runningPythonProcess.getInputStream()))) {
                     String line;
-                    while ((line = reader.readLine()) != null) {
-                        if (isCancelled()) {
-                            break;
-                        }
-                        
-                        final String logLine = line;
-                        Platform.runLater(() -> txtLog.appendText(logLine + "\n"));
-
-                        if (logLine.trim().startsWith("{\"epoch\":")) {
-                            try {
-                                Map<String, Object> epochData = objectMapper.readValue(logLine, new TypeReference<>() {});
-                                int epoch = (Integer) epochData.get("epoch") + 1;
-                                double acc = ((Number) epochData.get("val_accuracy")).doubleValue();
-                                double loss = ((Number) epochData.get("val_loss")).doubleValue();
-
-                                final int currentEpoch = epoch;
-                                final int finalTotalEpochs = totalEpochs;
-                                Platform.runLater(() -> {
-                                    updateMessage(String.format("Training Epoch %d/%d...", currentEpoch, finalTotalEpochs));
-                                    updateProgress(currentEpoch, finalTotalEpochs);
-                                    accuracySeries.getData().add(new XYChart.Data<>(currentEpoch, acc));
-                                    lossSeries.getData().add(new XYChart.Data<>(currentEpoch, loss));
-                                });
-
-                            } catch (Exception e) {
-                                if (!isCancelled()) {
-                                    System.err.println("Gagal parse JSON real-time: " + e.getMessage());
-                                }
+                    while ((line = r.readLine()) != null) {
+                        if (isCancelled()) break;
+                        final String l = line;
+                        Platform.runLater(() -> {
+                            txtLog.appendText(l + "\n");
+                            // Update Grafik Real-time
+                            if (l.trim().startsWith("{\"epoch\":")) {
+                                try {
+                                    Map<String,Object> d = objectMapper.readValue(l, new TypeReference<>(){});
+                                    int ep = (Integer)d.get("epoch")+1;
+                                    accuracySeries.getData().add(new XYChart.Data<>(ep, ((Number)d.get("val_accuracy")).doubleValue()));
+                                    lossSeries.getData().add(new XYChart.Data<>(ep, ((Number)d.get("val_loss")).doubleValue()));
+                                } catch(Exception e){}
                             }
-                        }
+                        });
                     }
                 }
-
-                int exitCode = runningPythonProcess.waitFor();
-                runningPythonProcess = null; 
-                
-                if (isCancelled()) {
-                    return false; 
-                }
-                
-                return exitCode == 0;
+                return runningPythonProcess.waitFor() == 0 && !isCancelled();
             }
         };
-    }
-    
-    private void clearResultsUI() {
-        accuracySeries.getData().clear();
-        lossSeries.getData().clear();
-        lblAkurasi.setText("-");
-        lblPresisi.setText("-");
-        lblRecall.setText("-");
-        lblF1.setText("-");
-        imgConfusionMatrix.setImage(null);
-        txtClassificationReport.clear();
-        txtLog.clear(); // Hapus log sebelumnya
 
-        if (galleryListView != null) {
-            galleryListView.setItems(FXCollections.observableArrayList());
-        }
+        // Handler Status Task
+        task.setOnRunning(e -> { 
+            loadingPane.setVisible(true); 
+            btnStartTraining.setDisable(true); 
+            btnBatal.setDisable(false); 
+        });
         
-        // Reset juga pilihan model
-        handleClearLoadModel();
+        task.setOnSucceeded(e -> {
+            loadingPane.setVisible(false); 
+            btnStartTraining.setDisable(false); 
+            btnBatal.setDisable(true);
+            
+            if (task.getValue()) { 
+                showAlert(Alert.AlertType.INFORMATION, "Sukses", "Training Selesai!"); 
+                loadResults(); 
+            } else if (!task.isCancelled()) {
+                showAlert(Alert.AlertType.ERROR, "Gagal", "Proses Python gagal. Cek log.");
+            }
+            cleanupTask();
+        });
+        
+        task.setOnFailed(e -> {
+            loadingPane.setVisible(false); 
+            btnStartTraining.setDisable(false); 
+            btnBatal.setDisable(true);
+            if (!task.isCancelled()) {
+                showAlert(Alert.AlertType.ERROR, "Error", task.getException().getMessage());
+                task.getException().printStackTrace();
+            }
+            cleanupTask();
+        });
+        
+        task.setOnCancelled(e -> {
+            loadingPane.setVisible(false); 
+            btnStartTraining.setDisable(false); 
+            btnBatal.setDisable(true);
+            txtLog.appendText("\n--- DIBATALKAN OLEH PENGGUNA ---\n");
+            cleanupTask();
+        });
+
+        runningTask = task;
+        new Thread(task).start();
+    }
+
+    private void cleanupTask() {
+        runningTask = null;
+        runningPythonProcess = null;
+    }
+
+    @FXML
+    private void handleBatal() {
+        if (runningPythonProcess != null) runningPythonProcess.destroyForcibly();
+        if (runningTask != null) runningTask.cancel(true);
+    }
+
+    @FXML
+    private void handleZoomConfusionMatrix(MouseEvent e) {
+        if (imgConfusionMatrix.getImage() == null) return;
+        ImageView iv = new ImageView(imgConfusionMatrix.getImage()); 
+        iv.setPreserveRatio(true);
+        
+        ScrollPane sp = new ScrollPane(new StackPane(iv));
+        sp.setPannable(true);
+        sp.setStyle("-fx-background: #333;");
+        
+        Stage s = new Stage(); 
+        s.initModality(Modality.APPLICATION_MODAL);
+        s.setTitle("Confusion Matrix Zoom");
+        s.setScene(new Scene(sp, 800, 600));
+        s.showAndWait();
     }
 
     private void loadResults() {
-        if (outputDir == null) return;
-        System.out.println("Mencoba memuat hasil dari: " + outputDir.getAbsolutePath());
-
-        File metricsFile = new File(outputDir, "final_metrics.json");
-        File cmFile = new File(outputDir, "confusion_matrix_test.png");
-        File reportFile = new File(outputDir, "classification_report_test.txt");
-        File modelFile = new File(outputDir, "trained_model.h5");
-        File predsFile = new File(outputDir, "predictions.json"); 
-
-        // 1. Muat Metrik
-        if (metricsFile.exists()) {
-            try {
-                Map<String, Object> metrics = objectMapper.readValue(metricsFile, new TypeReference<>() {});
-                lblAkurasi.setText(String.format("%.2f%%", ((Number) metrics.getOrDefault("accuracy", 0.0)).doubleValue() * 100));
-                lblPresisi.setText(String.format("%.2f%%", ((Number) metrics.getOrDefault("precision_macro", 0.0)).doubleValue() * 100));
-                lblRecall.setText(String.format("%.2f%%", ((Number) metrics.getOrDefault("recall_macro", 0.0)).doubleValue() * 100));
-                lblF1.setText(String.format("%.2f%%", ((Number) metrics.getOrDefault("f1_macro", 0.0)).doubleValue() * 100));
-            } catch (IOException e) {
-                System.err.println("Gagal baca metrics.json: " + e.getMessage());
+        try {
+            File m = new File(outputDir, "final_metrics.json");
+            if (m.exists()) {
+                Map<String,Object> d = objectMapper.readValue(m, new TypeReference<>(){});
+                lblAkurasi.setText(String.format("%.2f%%", ((Number)d.get("accuracy")).doubleValue()*100));
+                lblPresisi.setText(String.format("%.2f%%", ((Number)d.get("precision_macro")).doubleValue()*100));
+                lblRecall.setText(String.format("%.2f%%", ((Number)d.get("recall_macro")).doubleValue()*100));
+                lblF1.setText(String.format("%.2f%%", ((Number)d.get("f1_macro")).doubleValue()*100));
             }
-        } else {
-             System.err.println("File final_metrics.json tidak ditemukan.");
-        }
+            File cm = new File(outputDir, "confusion_matrix_test.png");
+            if (cm.exists()) imgConfusionMatrix.setImage(new Image(new FileInputStream(cm)));
+            
+            File r = new File(outputDir, "classification_report_test.txt");
+            if (r.exists()) txtClassificationReport.setText(Files.readString(r.toPath()));
 
-        // 2. Muat Confusion Matrix
-        if (cmFile.exists()) {
-            try (FileInputStream cmStream = new FileInputStream(cmFile)) {
-                imgConfusionMatrix.setImage(new Image(cmStream));
-            } catch (IOException e) {
-                System.err.println("Gagal baca confusion_matrix_test.png: " + e.getMessage());
+            File p = new File(outputDir, "predictions.json");
+            if (p.exists()) {
+                List<GalleryItem> l = objectMapper.readValue(p, new TypeReference<>(){});
+                galleryListView.setItems(FXCollections.observableArrayList(l));
             }
-        } else {
-             System.err.println("File confusion_matrix_test.png tidak ditemukan.");
-        }
-
-        // 3. Muat Classification Report
-        if (reportFile.exists()) {
-            try {
-                String reportText = new String(Files.readAllBytes(Paths.get(reportFile.getAbsolutePath())), StandardCharsets.UTF_8);
-                txtClassificationReport.setText(reportText);
-            } catch (IOException e) {
-                 System.err.println("Gagal baca classification_report_test.txt: " + e.getMessage());
-            }
-        } else {
-            System.err.println("File classification_report_test.txt tidak ditemukan.");
-            txtClassificationReport.setText("File laporan tidak ditemukan.");
-        }
-
-        // 4. Muat Galeri Prediksi
-        if (predsFile.exists()) {
-            try {
-                List<GalleryItem> items = objectMapper.readValue(predsFile, new TypeReference<>() {});
-                galleryListView.setItems(FXCollections.observableArrayList(items));
-                System.out.println("Daftar prediksi galeri ("+ items.size() +" item) berhasil dimuat.");
-            } catch (IOException e) {
-                 System.err.println("Gagal baca predictions.json: " + e.getMessage());
-            }
-        } else {
-             System.err.println("File predictions.json tidak ditemukan.");
-        }
-
-        // 5. Konfirmasi Model Disimpan
-        if (modelFile.exists()) {
-            txtLog.appendText(String.format("\n--- MODEL BERHASIL DISIMPAN ---\n%s\n", modelFile.getAbsolutePath()));
-        }
+        } catch(Exception e) { e.printStackTrace(); }
+    }
+    
+    private void clearResultsUI() {
+        accuracySeries.getData().clear(); 
+        lossSeries.getData().clear();
+        lblAkurasi.setText("-"); 
+        lblPresisi.setText("-"); 
+        lblRecall.setText("-"); 
+        lblF1.setText("-");
+        txtClassificationReport.clear(); 
+        txtLog.clear();
+        if (galleryListView != null) galleryListView.getItems().clear();
     }
 
-    // ==========================================================
-    // === FUNGSI-FUNGSI GALERI (Tidak Berubah) ===
-    // ==========================================================
-    
     private void setupGalleryCellFactory() {
-         galleryListView.setCellFactory(param -> new ListCell<>() {
-            private final HBox hbox = new HBox(10);
-            private final ImageView thumbnail = new ImageView();
-            private final VBox textVBox = new VBox();
-            private final Label fileNameLabel = new Label();
-            private final Label actualLabel = new Label();
-            private final Label predictedLabel = new Label();
-
+        galleryListView.setCellFactory(p -> new ListCell<>() {
+            HBox hb = new HBox(10); ImageView iv = new ImageView(); VBox vb = new VBox();
+            Label lName = new Label(), lAct = new Label(), lPred = new Label();
             {
-                fileNameLabel.setStyle("-fx-font-weight: bold;");
-                textVBox.getChildren().addAll(fileNameLabel, actualLabel, predictedLabel);
-                thumbnail.setFitWidth(60);
-                thumbnail.setFitHeight(60);
-                thumbnail.setPreserveRatio(true);
-                thumbnail.setSmooth(true);
-                hbox.getChildren().addAll(thumbnail, textVBox);
-                hbox.setAlignment(Pos.CENTER_LEFT);
+                lName.setStyle("-fx-font-weight:bold"); vb.getChildren().addAll(lName, lAct, lPred);
+                iv.setFitHeight(60); iv.setFitWidth(60); iv.setPreserveRatio(true);
+                hb.getChildren().addAll(iv, vb); hb.setAlignment(Pos.CENTER_LEFT);
             }
-
-            @Override
-            protected void updateItem(GalleryItem item, boolean empty) {
+            @Override protected void updateItem(GalleryItem item, boolean empty) {
                 super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    setGraphic(null);
-                    thumbnail.setImage(null);
-                } else {
-                    fileNameLabel.setText("File: " + item.fileName);
-                    actualLabel.setText("Asli: " + item.actualLabel);
-                    predictedLabel.setText("Prediksi: " + item.predictedLabel);
-
-                    if (item.actualLabel.equals(item.predictedLabel)) {
-                        predictedLabel.setTextFill(Color.GREEN);
-                    } else {
-                        predictedLabel.setTextFill(Color.RED);
+                if (empty || item == null) { setText(null); setGraphic(null); }
+                else {
+                    lName.setText(item.fileName); lAct.setText("Asli: "+item.actualLabel);
+                    lPred.setText("Prediksi: "+item.predictedLabel);
+                    lPred.setTextFill(item.actualLabel.equals(item.predictedLabel) ? Color.GREEN : Color.RED);
+                    if (inputDir != null) {
+                        File f = findImageFile(inputDir, item.actualLabel, item.fileName);
+                        if (f != null && f.exists()) {
+                            try { iv.setImage(new Image(new FileInputStream(f))); } catch(Exception e){}
+                        }
                     }
-                    loadThumbnailForItemAsync(item);
-                    setGraphic(hbox);
+                    setGraphic(hb);
                 }
             }
-            
-            private void loadThumbnailForItemAsync(GalleryItem item) {
-                 thumbnail.setImage(null);
-                 if (inputDir == null || !inputDir.isDirectory()) return;
-                 File imageFile = findImageFile(inputDir, item.actualLabel, item.fileName);
-                 
-                 if (imageFile != null && imageFile.exists()) {
-                     Image img = new Image(imageFile.toURI().toString(), 60, 60, true, true, true);
-                     thumbnail.setImage(img);
-                     img.errorProperty().addListener((obs, oldVal, newVal) -> {
-                         if (newVal) {
-                             System.err.println("Gagal load thumbnail async: " + item.fileName);
-                             thumbnail.setImage(null);
-                         }
-                     });
-                 } else {
-                     System.err.println("Thumbnail tidak ditemukan: " + item.fileName + " di " + item.actualLabel);
-                     thumbnail.setImage(null);
-                 }
-            }
         });
     }
-
-    private void setupGalleryClickListener() {
-        galleryListView.getSelectionModel().selectedItemProperty().addListener((obs, oldSel, newSel) -> {
-            if (newSel != null) {
-                Alert detailDialog = new Alert(Alert.AlertType.INFORMATION);
-                detailDialog.setTitle("Detail Prediksi Gambar");
-                detailDialog.setHeaderText("File: " + newSel.fileName);
-
-                ImageView dialogImage = new ImageView();
-                dialogImage.setFitHeight(250);
-                dialogImage.setPreserveRatio(true);
-                dialogImage.setSmooth(true);
-
-                 if (inputDir != null && inputDir.isDirectory()) {
-                     File imageFile = findImageFile(inputDir, newSel.actualLabel, newSel.fileName);
-                     if (imageFile != null && imageFile.exists()) {
-                         Image img = new Image(imageFile.toURI().toString(), 0, 250, true, true, true);
-                         dialogImage.setImage(img);
-                         img.errorProperty().addListener((ob, ov, nv) -> {
-                             if (nv) System.err.println("Gagal load gambar detail: " + newSel.fileName);
-                         });
-                         detailDialog.setGraphic(dialogImage);
-                     } else {
-                         System.err.println("Gambar detail tidak ditemukan: " + newSel.fileName);
-                         detailDialog.setGraphic(null);
-                     }
-                 } else {
-                     detailDialog.setGraphic(null);
-                 }
-
-                StringBuilder content = new StringBuilder();
-                content.append(String.format("Prediksi Utama: %s (Confidence: %.2f%%)\n",
-                        newSel.predictedLabel, newSel.confidence));
-                content.append("Label Asli: " + newSel.actualLabel + "\n\n");
-                content.append("--- Skor Prediksi Semua Kelas ---\n");
-
-                newSel.allScores.entrySet().stream()
-                        .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
-                        .forEach(entry -> content.append(String.format("%s: %.2f%%\n", entry.getKey(), entry.getValue())));
-
-                TextArea textArea = new TextArea(content.toString());
-                textArea.setEditable(false);
-                textArea.setWrapText(true);
-                textArea.setPrefHeight(200);
-
-                detailDialog.getDialogPane().setContent(textArea);
-                detailDialog.getDialogPane().setPrefWidth(550);
-                detailDialog.setResizable(true);
-
-                detailDialog.showAndWait();
-                galleryListView.getSelectionModel().clearSelection();
-            }
-        });
-    }
-
-    private File findImageFile(File baseDir, String className, String fileName) {
-        if (baseDir == null || className == null || fileName == null) return null;
-        
-        File classDir = new File(baseDir, className);
-        if (classDir.isDirectory()) {
-            File imgFile = new File(classDir, fileName);
-            if (imgFile.exists()) return imgFile;
-        }
-        
-        File imgFileRoot = new File(baseDir, fileName);
-        if (imgFileRoot.exists()) return imgFileRoot;
-
+    
+    private File findImageFile(File baseDir, String label, String fileName) {
+        File f = new File(new File(baseDir, label), fileName);
+        if (f.exists()) return f;
+        f = new File(baseDir, fileName);
+        if (f.exists()) return f;
         return null;
     }
 
-    // ==========================================================
-    // === FUNGSI HELPER ALERT (Tidak Berubah) ===
-    // ==========================================================
-
-    private void showAlert(Alert.AlertType type, String title, String message) {
-        if (!Platform.isFxApplicationThread()) {
-            Platform.runLater(() -> showAlertInternal(type, title, message));
-        } else {
-            showAlertInternal(type, title, message);
-        }
+    private void setupGalleryClickListener() {
+        galleryListView.getSelectionModel().selectedItemProperty().addListener((o,old,item)->{
+            if(item==null) return;
+            Alert a = new Alert(Alert.AlertType.INFORMATION); a.setHeaderText(item.fileName);
+            StringBuilder sb = new StringBuilder("Scores:\n");
+            item.allScores.forEach((k,v)->sb.append(k).append(": ").append(String.format("%.2f",v)).append("%\n"));
+            a.setContentText(sb.toString()); a.showAndWait();
+        });
     }
 
-    private void showAlertInternal(Alert.AlertType type, String title, String message) {
-        Alert alert = new Alert(type);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message);
-        alert.showAndWait();
+    private void showAlert(Alert.AlertType type, String title, String msg) {
+        Platform.runLater(() -> {
+            Alert a = new Alert(type); a.setTitle(title); a.setContentText(msg); a.showAndWait();
+        });
     }
 }
