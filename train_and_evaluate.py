@@ -52,11 +52,9 @@ class RealtimeLoggerCallback(Callback):
         if logs:
             # Format JSON standar yang dibaca Java
             log_data = {
-                "epoch": epoch + 1, 
-                "val_loss": float(logs.get('val_loss', 0.0)),
-                "val_accuracy": float(logs.get('val_accuracy', 0.0)),
-                "loss": float(logs.get('loss', 0.0)),
-                "accuracy": float(logs.get('accuracy', 0.0))
+                "epoch": epoch,
+                "val_loss": logs.get('val_loss'),
+                "val_accuracy": logs.get('val_accuracy')
             }
             print(json.dumps(log_data))
             sys.stdout.flush()
