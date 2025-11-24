@@ -56,6 +56,7 @@ class RealtimeLoggerCallback(Callback):
                 "val_loss": logs.get('val_loss'),
                 "val_accuracy": logs.get('val_accuracy')
             }
+            # Print JSON ini akan muncul SEBELUM ringkasan Keras (karena verbose=2)
             print(json.dumps(log_data))
             sys.stdout.flush()
 
@@ -111,7 +112,7 @@ def prepare_data(args):
     return split_dir
 
 # ==========================================================
-# 5. BUILD MODEL (STRATEGI NOTEBOOK)
+# 5. BUILD MODEL (STRATEGI NOTEBOOK - FINE TUNING)
 # ==========================================================
 def build_or_load_model(num_classes, args):
     # KASUS A: Continue Training (User load model .h5)
@@ -126,7 +127,6 @@ def build_or_load_model(num_classes, args):
             model = load_model(args.load_model_path) # Fallback
 
         # PENTING: Compile ulang dengan strategi Notebook (LR Kecil + Focal Loss)
-        # Ini memastikan model lama 'beradaptasi' dengan teknik training baru
         print("Re-compiling model dengan strategi Notebook (Adam 1e-5, Focal Loss)...")
         model.compile(
             optimizer=optimizers.Adam(learning_rate=1e-5), 
@@ -135,11 +135,12 @@ def build_or_load_model(num_classes, args):
         )
         return model
 
-    # KASUS B: Training Baru (VGG16 ImageNet)
-    print("--- Membangun Model VGG16 Baru ---")
+    # KASUS B: Training Baru (VGG16 ImageNet - FINE TUNING STRATEGY)
+    print("--- Membangun Model VGG16 Baru (Fine Tuning) ---")
     
     base_model = VGG16(weights='imagenet', include_top=False, input_shape=DEFAULT_IMG_SIZE + (3,))
     
+    # --- INI LOGIKA MODEL TERBARU DARI FILE ABANG ---
     # Strategi Unfreeze: Block 5 & 4
     base_model.trainable = True
     set_trainable = False
@@ -147,6 +148,7 @@ def build_or_load_model(num_classes, args):
         if layer.name.startswith('block5_conv1') or layer.name.startswith('block4_conv1'):
             set_trainable = True
         layer.trainable = set_trainable
+    # ------------------------------------------------
             
     # Custom Head
     x = base_model.output
@@ -163,8 +165,9 @@ def build_or_load_model(num_classes, args):
     predictions = Dense(num_classes, activation='softmax')(x)
     model = Model(inputs=base_model.input, outputs=predictions)
     
+    # Compile dengan LR 1e-5 (Aman untuk Fine Tuning)
     model.compile(
-        optimizer=optimizers.Adam(learning_rate=1e-4), 
+        optimizer=optimizers.Adam(learning_rate=1e-5), 
         loss=focal_loss(), 
         metrics=['accuracy']
     )
@@ -228,9 +231,9 @@ def main():
     best_model_path = os.path.join(args.output_dir, "best_model.h5")
     callbacks = [
         RealtimeLoggerCallback(), 
-        ModelCheckpoint(best_model_path, monitor='val_loss', save_best_only=True, verbose=0),
-        EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True, verbose=0),
-        ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=1e-7, verbose=0)
+        ModelCheckpoint(best_model_path, monitor='val_loss', save_best_only=True, verbose=1),
+        EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True, verbose=1),
+        ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=1e-7, verbose=1)
     ]
 
     # 6. Training
@@ -242,7 +245,9 @@ def main():
             validation_data=val_gen,
             class_weight=class_weights,
             callbacks=callbacks,
-            verbose=0 
+            # === BAGIAN PENTING: VERBOSE=2 ===
+            # Ini yang bikin log muncul: Epoch X/Y -> JSON -> 500/500 - 1377s
+            verbose=2 
         )
     except Exception as e:
         print(f"CRITICAL ERROR saat Training: {e}")
@@ -277,11 +282,16 @@ def main():
         f.write(classification_report(y_true, y_pred, target_names=list(test_gen.class_indices.keys())))
         
     cm = confusion_matrix(y_true, y_pred)
-    plt.figure(figsize=(8,6))
+    # CONFUSION MATRIX RAPI (Dari kode sebelumnya)
+    plt.figure(figsize=(12, 10))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=test_gen.class_indices.keys(), yticklabels=test_gen.class_indices.keys())
-    plt.title('Confusion Matrix (Test Set)')
+    plt.title('Confusion Matrix (Test Set)', fontsize=16)
+    plt.ylabel('Label Asli', fontsize=12)
+    plt.xlabel('Label Prediksi', fontsize=12)
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
     plt.tight_layout()
-    plt.savefig(os.path.join(args.output_dir, "confusion_matrix_test.png"))
+    plt.savefig(os.path.join(args.output_dir, "confusion_matrix_test.png"), dpi=300)
     
     # Save Sample Predictions for Gallery
     predictions_list = []
